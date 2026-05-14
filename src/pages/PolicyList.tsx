@@ -1,52 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Table, Tag, Typography, Alert, Spin, Button, Input,
-} from 'antd';
+import { Table, Tag, Typography, Alert, Spin, Button, Input } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined,
   CheckCircleFilled, ClockCircleFilled, PauseCircleFilled, StopFilled,
   BranchesOutlined, TableOutlined, BarChartOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
-import { fetchPolicies } from '../api/client';
-import type { PolicySummary, PolicyType, PolicyStatus } from '../types';
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
+import { fetchPoliciesPage, fetchPolicyStats } from '../api/client';
+import type { PolicySummary, PolicyType, PolicyStatus, PolicyStats } from '../types';
 
 const { Title, Text } = Typography;
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface PolicyRow {
-  policyId: string;
-  name: string;
-  type: PolicyType;
-  latestVersion: string;
-  latestStatus: PolicyStatus;
-  versionCount: number;
-  updatedAt: string;
-  createdBy?: string;
-}
-
-function groupPolicies(summaries: PolicySummary[]): PolicyRow[] {
-  const map = new Map<string, PolicyRow>();
-  for (const s of summaries) {
-    if (!map.has(s.policyId)) {
-      map.set(s.policyId, {
-        policyId: s.policyId,
-        name: s.name,
-        type: s.type,
-        latestVersion: s.version,
-        latestStatus: s.status,
-        versionCount: 1,
-        updatedAt: s.updatedAt,
-        createdBy: s.createdBy,
-      });
-    } else {
-      map.get(s.policyId)!.versionCount++;
-    }
-  }
-  return Array.from(map.values());
-}
 
 // ── Visual maps ───────────────────────────────────────────────────────────────
 
@@ -57,17 +21,17 @@ const TYPE_META: Record<PolicyType, { label: string; color: string; bg: string; 
 };
 
 const STATUS_META: Record<PolicyStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  ACTIVE:   { label: 'Active',   color: '#10b981', icon: <CheckCircleFilled style={{ color: '#10b981' }} /> },
-  DRAFT:    { label: 'Draft',    color: '#f59e0b', icon: <ClockCircleFilled style={{ color: '#f59e0b' }} /> },
-  INACTIVE: { label: 'Inactive', color: '#94a3b8', icon: <PauseCircleFilled style={{ color: '#94a3b8' }} /> },
-  ARCHIVED: { label: 'Archived', color: '#ef4444', icon: <StopFilled        style={{ color: '#ef4444' }} /> },
+  ACTIVE:   { label: 'Active',   color: '#10b981', icon: <CheckCircleFilled  style={{ color: '#10b981' }} /> },
+  DRAFT:    { label: 'Draft',    color: '#f59e0b', icon: <ClockCircleFilled  style={{ color: '#f59e0b' }} /> },
+  INACTIVE: { label: 'Inactive', color: '#94a3b8', icon: <PauseCircleFilled  style={{ color: '#94a3b8' }} /> },
+  ARCHIVED: { label: 'Archived', color: '#ef4444', icon: <StopFilled         style={{ color: '#ef4444' }} /> },
 };
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, accent, icon,
-}: { label: string; value: number; accent: string; icon: React.ReactNode }) {
+  label, value, accent, icon, loading,
+}: { label: string; value: number; accent: string; icon: React.ReactNode; loading: boolean }) {
   return (
     <div style={{
       background: '#fff',
@@ -80,22 +44,16 @@ function StatCard({
       boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
     }}>
       <div style={{
-        width: 44,
-        height: 44,
-        borderRadius: 10,
+        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
         background: accent + '18',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 20,
-        color: accent,
-        flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 20, color: accent,
       }}>
         {icon}
       </div>
       <div>
         <div style={{ fontSize: 26, fontWeight: 700, color: '#0f172a', lineHeight: 1.1 }}>
-          {value}
+          {loading ? '—' : value}
         </div>
         <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{label}</div>
       </div>
@@ -105,47 +63,64 @@ function StatCard({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 20;
+
 export default function PolicyList() {
-  const [all, setAll]       = useState<PolicyRow[]>([]);
-  const [rows, setRows]     = useState<PolicyRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchPolicies()
-      .then((data) => {
-        const grouped = groupPolicies(data);
-        setAll(grouped);
-        setRows(grouped);
+  // Table state
+  const [rows, setRows]           = useState<PolicySummary[]>([]);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(0);
+  const [tableLoading, setTableLoading] = useState(true);
+  const [tableError, setTableError]     = useState<string | null>(null);
+
+  // Stats state (loaded independently)
+  const [stats, setStats]         = useState<PolicyStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // Search (client-side filter on the current page — full server-side search can be added later)
+  const [search, setSearch]       = useState('');
+
+  const loadPage = (p: number) => {
+    setTableLoading(true);
+    setTableError(null);
+    fetchPoliciesPage(p, PAGE_SIZE)
+      .then(data => {
+        setRows(data.content);
+        setTotal(data.totalElements);
+        setPage(data.number);
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  // Search filter
-  useEffect(() => {
-    const q = search.trim().toLowerCase();
-    setRows(q ? all.filter(r =>
-      r.name.toLowerCase().includes(q) ||
-      r.policyId.toLowerCase().includes(q)
-    ) : all);
-  }, [search, all]);
-
-  // Stats
-  const stats = {
-    total:    all.length,
-    active:   all.filter(r => r.latestStatus === 'ACTIVE').length,
-    draft:    all.filter(r => r.latestStatus === 'DRAFT').length,
-    archived: all.filter(r => r.latestStatus === 'ARCHIVED').length,
+      .catch((e: Error) => setTableError(e.message))
+      .finally(() => setTableLoading(false));
   };
 
-  const columns: ColumnsType<PolicyRow> = [
+  useEffect(() => { loadPage(0); }, []);
+
+  useEffect(() => {
+    fetchPolicyStats()
+      .then(setStats)
+      .catch(() => {/* stats are non-critical — fail silently */})
+      .finally(() => setStatsLoading(false));
+  }, []);
+
+  const handleTableChange = (pagination: TablePaginationConfig) => {
+    loadPage((pagination.current ?? 1) - 1);
+  };
+
+  // Filter visible rows by search (over current page)
+  const visible = search.trim()
+    ? rows.filter(r =>
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.policyId.toLowerCase().includes(search.toLowerCase()),
+      )
+    : rows;
+
+  const columns: ColumnsType<PolicySummary> = [
     {
       title: 'Policy',
       key: 'policy',
-      render: (_: unknown, row: PolicyRow) => (
+      render: (_: unknown, row: PolicySummary) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 8, flexShrink: 0,
@@ -169,23 +144,19 @@ export default function PolicyList() {
       dataIndex: 'type',
       key: 'type',
       render: (t: PolicyType) => (
-        <Tag
-          style={{
-            color: TYPE_META[t].color,
-            background: TYPE_META[t].bg,
-            border: 'none',
-            fontWeight: 500,
-            fontSize: 11,
-          }}
-        >
+        <Tag style={{
+          color: TYPE_META[t].color,
+          background: TYPE_META[t].bg,
+          border: 'none', fontWeight: 500, fontSize: 11,
+        }}>
           {TYPE_META[t].label}
         </Tag>
       ),
     },
     {
       title: 'Status',
-      dataIndex: 'latestStatus',
-      key: 'latestStatus',
+      dataIndex: 'status',
+      key: 'status',
       render: (s: PolicyStatus) => {
         const m = STATUS_META[s];
         return (
@@ -196,9 +167,9 @@ export default function PolicyList() {
       },
     },
     {
-      title: 'Version',
-      dataIndex: 'latestVersion',
-      key: 'latestVersion',
+      title: 'Latest Version',
+      dataIndex: 'version',
+      key: 'version',
       render: (v: string) => (
         <Text code style={{ fontSize: 11, background: '#f1f5f9', borderColor: '#e2e8f0' }}>{v}</Text>
       ),
@@ -211,12 +182,8 @@ export default function PolicyList() {
       render: (n: number) => (
         <span style={{
           display: 'inline-block',
-          background: '#f1f5f9',
-          borderRadius: 20,
-          padding: '1px 10px',
-          fontSize: 12,
-          color: '#475569',
-          fontWeight: 500,
+          background: '#f1f5f9', borderRadius: 20,
+          padding: '1px 10px', fontSize: 12, color: '#475569', fontWeight: 500,
         }}>
           {n}
         </span>
@@ -236,9 +203,7 @@ export default function PolicyList() {
       title: 'Created By',
       dataIndex: 'createdBy',
       key: 'createdBy',
-      render: (v?: string) => (
-        <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>
-      ),
+      render: (v?: string) => <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>,
     },
   ];
 
@@ -253,12 +218,12 @@ export default function PolicyList() {
         </Text>
       </div>
 
-      {/* Stat cards */}
+      {/* Stat cards — loaded independently from the backend */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
-        <StatCard label="Total Policies" value={stats.total}    accent="#6366f1" icon={<FileTextOutlined />} />
-        <StatCard label="Active"         value={stats.active}   accent="#10b981" icon={<CheckCircleFilled />} />
-        <StatCard label="Draft"          value={stats.draft}    accent="#f59e0b" icon={<ClockCircleFilled />} />
-        <StatCard label="Archived"       value={stats.archived} accent="#ef4444" icon={<StopFilled />} />
+        <StatCard label="Total Policies" value={stats?.total    ?? 0} accent="#6366f1" icon={<FileTextOutlined />}   loading={statsLoading} />
+        <StatCard label="Active"         value={stats?.active   ?? 0} accent="#10b981" icon={<CheckCircleFilled />}  loading={statsLoading} />
+        <StatCard label="Draft"          value={stats?.draft    ?? 0} accent="#f59e0b" icon={<ClockCircleFilled />}  loading={statsLoading} />
+        <StatCard label="Archived"       value={stats?.archived ?? 0} accent="#ef4444" icon={<StopFilled />}         loading={statsLoading} />
       </div>
 
       {/* Table card */}
@@ -273,13 +238,11 @@ export default function PolicyList() {
         <div style={{
           padding: '16px 20px',
           borderBottom: '1px solid #f1f5f9',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
+          display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <Input
             prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-            placeholder="Search by name or ID…"
+            placeholder="Filter by name or ID…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{ width: 260, borderRadius: 8 }}
@@ -296,22 +259,29 @@ export default function PolicyList() {
           </Button>
         </div>
 
-        {error && (
+        {tableError && (
           <div style={{ padding: 20 }}>
-            <Alert type="error" message={error} showIcon />
+            <Alert type="error" message={tableError} showIcon />
           </div>
         )}
 
-        <Spin spinning={loading}>
+        <Spin spinning={tableLoading}>
           <Table
-            dataSource={rows}
+            dataSource={visible}
             columns={columns}
-            rowKey="policyId"
+            rowKey="id"
             onRow={(row) => ({
               onClick: () => navigate(`/policies/${row.policyId}`),
               style: { cursor: 'pointer' },
             })}
-            pagination={{ pageSize: 20, hideOnSinglePage: true }}
+            onChange={handleTableChange}
+            pagination={{
+              current: page + 1,
+              pageSize: PAGE_SIZE,
+              total,
+              showTotal: (t, range) => `${range[0]}–${range[1]} of ${t} policies`,
+              showSizeChanger: false,
+            }}
             size="middle"
             locale={{
               emptyText: (
@@ -319,8 +289,7 @@ export default function PolicyList() {
                   <FileTextOutlined style={{ fontSize: 36, color: '#cbd5e1', marginBottom: 12 }} />
                   <div style={{ color: '#94a3b8', fontSize: 14 }}>No policies yet</div>
                   <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
+                    type="primary" icon={<PlusOutlined />}
                     style={{ marginTop: 16 }}
                     onClick={() => navigate('/policies/new')}
                   >

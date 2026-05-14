@@ -172,6 +172,15 @@ export interface PolicySummary {
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  versionCount: number;
+}
+
+export interface PolicyStats {
+  total: number;
+  active: number;
+  draft: number;
+  inactive: number;
+  archived: number;
 }
 
 export interface Policy {

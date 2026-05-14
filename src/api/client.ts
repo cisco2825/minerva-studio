@@ -4,6 +4,7 @@ import type {
   EvaluationResult,
   Page,
   Policy,
+  PolicyStats,
   PolicyStatus,
   PolicySummary,
   SavePolicyRequest,
@@ -19,6 +20,17 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+/** Paginated list — one entry per unique policyId (latest version). */
+export async function fetchPoliciesPage(page = 0, size = 20): Promise<Page<PolicySummary>> {
+  return handleResponse(await fetch(`${BASE}/policies?page=${page}&size=${size}`));
+}
+
+/** Aggregate counts by status — cheap single DB query. */
+export async function fetchPolicyStats(): Promise<PolicyStats> {
+  return handleResponse(await fetch(`${BASE}/policies/stats`));
+}
+
+/** @deprecated Use fetchPoliciesPage instead. Kept for versions tab usage. */
 export async function fetchPolicies(): Promise<PolicySummary[]> {
   return handleResponse(await fetch(`${BASE}/policies`));
 }
