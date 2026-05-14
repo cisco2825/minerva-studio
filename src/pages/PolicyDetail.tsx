@@ -519,6 +519,18 @@ function AuditLogTab({ policyId }: { policyId: string }) {
   );
 }
 
+// ── Type / status visual helpers ──────────────────────────────────────────────
+
+const TYPE_COLOR: Record<string, string> = {
+  RULE_CHAIN: '#6366f1', DECISION_TABLE: '#7c3aed', SCORECARD: '#0891b2',
+};
+const TYPE_BG: Record<string, string> = {
+  RULE_CHAIN: '#eef2ff', DECISION_TABLE: '#f5f3ff', SCORECARD: '#ecfeff',
+};
+const TYPE_LABEL: Record<string, string> = {
+  RULE_CHAIN: 'Rule Chain', DECISION_TABLE: 'Decision Table', SCORECARD: 'Scorecard',
+};
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PolicyDetail() {
@@ -537,59 +549,104 @@ export default function PolicyDetail() {
   const latest = versions[0];
 
   return (
-    <div style={{ padding: '32px 40px' }}>
-      <Space direction="vertical" size={24} style={{ width: '100%' }}>
-        <Space>
-          <Button
-            type="text"
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/')}
-          >
-            Back
-          </Button>
-        </Space>
+    <div style={{ minHeight: '100vh', background: '#f1f5f9' }}>
+
+      {/* Page header */}
+      <div style={{
+        background: '#fff',
+        borderBottom: '1px solid #e2e8f0',
+        padding: '20px 36px',
+      }}>
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/')}
+          style={{ color: '#64748b', padding: '0 0 12px', height: 'auto', fontSize: 13 }}
+        >
+          Back to Policies
+        </Button>
 
         <Spin spinning={loading}>
           {latest && (
-            <Space direction="vertical" size={4}>
-              <Space align="center" size={12}>
-                <Title level={3} style={{ margin: 0, fontFamily: 'monospace' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                background: TYPE_BG[latest.type],
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 20, color: TYPE_COLOR[latest.type],
+              }}>
+                {latest.type === 'RULE_CHAIN' ? '⛓' : latest.type === 'DECISION_TABLE' ? '⊞' : '◎'}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Title level={4} style={{ margin: 0, color: '#0f172a' }}>{latest.name}</Title>
+                  <Tag style={{
+                    color: TYPE_COLOR[latest.type],
+                    background: TYPE_BG[latest.type],
+                    border: 'none', fontWeight: 500, fontSize: 11,
+                  }}>
+                    {TYPE_LABEL[latest.type]}
+                  </Tag>
+                </div>
+                <Text style={{ fontFamily: 'monospace', fontSize: 12, color: '#94a3b8' }}>
                   {latest.policyId}
-                </Title>
-                <Tag color={{ RULE_CHAIN: 'blue', DECISION_TABLE: 'purple', SCORECARD: 'cyan' }[latest.type]}>
-                  {latest.type.replace('_', ' ')}
-                </Tag>
-              </Space>
-              {latest.name !== latest.policyId && (
-                <Text type="secondary">{latest.name}</Text>
-              )}
-            </Space>
+                </Text>
+              </div>
+            </div>
           )}
         </Spin>
+      </div>
 
+      {/* Tabs */}
+      <div style={{ padding: '0 36px' }}>
         <Tabs
           defaultActiveKey="versions"
+          style={{ marginTop: 8 }}
           items={[
             {
               key: 'versions',
               label: 'Versions',
-              children: policyId ? <VersionsTab policyId={policyId} /> : null,
+              children: (
+                <div style={{
+                  background: '#fff', borderRadius: 12,
+                  border: '1px solid #e2e8f0', padding: 24,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                }}>
+                  {policyId ? <VersionsTab policyId={policyId} /> : null}
+                </div>
+              ),
             },
             {
               key: 'test',
               label: 'Test Console',
-              children: policyId
-                ? <TestConsoleTab policyId={policyId} versions={versions} />
-                : null,
+              children: (
+                <div style={{
+                  background: '#fff', borderRadius: 12,
+                  border: '1px solid #e2e8f0', padding: 24,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                }}>
+                  {policyId
+                    ? <TestConsoleTab policyId={policyId} versions={versions} />
+                    : null}
+                </div>
+              ),
             },
             {
               key: 'audit',
               label: 'Audit Log',
-              children: policyId ? <AuditLogTab policyId={policyId} /> : null,
+              children: (
+                <div style={{
+                  background: '#fff', borderRadius: 12,
+                  border: '1px solid #e2e8f0', padding: 24,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                }}>
+                  {policyId ? <AuditLogTab policyId={policyId} /> : null}
+                </div>
+              ),
             },
           ]}
         />
-      </Space>
+      </div>
     </div>
   );
 }
