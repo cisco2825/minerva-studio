@@ -16,7 +16,10 @@ import type {
 } from '../types';
 import { getStoredToken } from '../contexts/AuthContext';
 
-const BASE = '/api/v2';
+// In development, Vite proxies /api → localhost:8080 (see vite.config.ts).
+// In production (Vercel), set VITE_API_BASE_URL to your Render backend URL,
+// e.g. https://minerva-engine.onrender.com
+const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ''}/api/v2`;
 
 // ── Authenticated fetch wrapper ───────────────────────────────────────────────
 // Automatically attaches Authorization header from localStorage.
