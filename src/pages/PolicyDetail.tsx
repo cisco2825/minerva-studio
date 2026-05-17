@@ -6,12 +6,12 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  EditOutlined, CopyOutlined,
+  EditOutlined, CopyOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
   fetchVersions, updateStatus, evaluate,
-  fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition,
+  fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition, deletePolicy,
 } from '../api/client';
 import type {
   PolicySummary, PolicyStatus, EvaluationLogSummary,
@@ -58,14 +58,22 @@ function policyToEditorState(policy: Policy, summary: PolicySummary, mode: 'edit
     position: n.position,
     data: { label: n.name || n.type, config: n.config || {} },
   }));
-  const rfEdges: Edge[] = (policy.edges || []).map(e => ({
-    id: e.id,
-    source: e.source,
-    sourceHandle: e.sourceHandle,
-    target: e.target,
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-  }));
+  const HANDLE_COLOR: Record<string, string> = {
+    pass: '#16a34a', fail: '#ef4444', cantDecide: '#f59e0b',
+    next: '#6366f1', default: '#94a3b8',
+  };
+  const rfEdges: Edge[] = (policy.edges || []).map(e => {
+    const color = HANDLE_COLOR[e.sourceHandle || 'next'] ?? '#94a3b8';
+    return {
+      id: e.id,
+      source: e.source,
+      sourceHandle: e.sourceHandle,
+      target: e.target,
+      type: 'default',
+      markerEnd: { type: MarkerType.ArrowClosed, color },
+      style: { stroke: color, strokeWidth: 2 },
+    };
+  });
   if (rfNodes.length === 0) {
     rfNodes.push({ id: 'start', type: 'START', position: { x: 80, y: 200 }, data: { label: 'START' } });
   }
@@ -538,6 +546,7 @@ export default function PolicyDetail() {
   const navigate = useNavigate();
   const [versions, setVersions] = useState<PolicySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!policyId) return;
@@ -545,6 +554,19 @@ export default function PolicyDetail() {
       .then(setVersions)
       .finally(() => setLoading(false));
   }, [policyId]);
+
+  const handleDelete = async () => {
+    if (!policyId) return;
+    setDeleting(true);
+    try {
+      await deletePolicy(policyId);
+      message.success('Policy deleted');
+      navigate('/');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Delete failed');
+      setDeleting(false);
+    }
+  };
 
   const latest = versions[0];
 
@@ -557,14 +579,34 @@ export default function PolicyDetail() {
         borderBottom: '1px solid #e2e8f0',
         padding: '20px 36px',
       }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
-          style={{ color: '#64748b', padding: '0 0 12px', height: 'auto', fontSize: 13 }}
-        >
-          Back to Policies
-        </Button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/')}
+            style={{ color: '#64748b', padding: '0 0 12px', height: 'auto', fontSize: 13 }}
+          >
+            Back to Policies
+          </Button>
+          <Popconfirm
+            title="Delete this policy?"
+            description="All versions and their data will be permanently removed."
+            onConfirm={handleDelete}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+            placement="bottomRight"
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleting}
+              size="small"
+            >
+              Delete Policy
+            </Button>
+          </Popconfirm>
+        </div>
 
         <Spin spinning={loading}>
           {latest && (

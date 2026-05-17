@@ -3,7 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Axiom — Rule Engine</title>
+    <title>Minerva</title>
+
+    <!-- Inter (UI) + JetBrains Mono (expressions / code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body, #root {
+        margin: 0; padding: 0; height: 100%;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-feature-settings: 'cv11', 'ss01'; /* Inter contextual alternates */
+        letter-spacing: -0.01em;
+      }
+      /* Tighten default line-height for dense canvas nodes */
+      .react-flow__node { line-height: 1.45; }
+      /* Code / expression fields */
+      .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace !important; font-size: 11px; letter-spacing: 0; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

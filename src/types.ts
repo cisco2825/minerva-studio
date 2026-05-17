@@ -1,5 +1,59 @@
+// ── Auth types ────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  id: string;
+  email: string;
+  name: string;
+}
+
+// ── Policy types ──────────────────────────────────────────────────────────────
+
 export type PolicyType = 'RULE_CHAIN' | 'DECISION_TABLE' | 'SCORECARD';
 export type PolicyStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+
+// ── Lookup types ──────────────────────────────────────────────────────────────
+
+export type LookupType = 'INLINE' | 'FILE';
+export type LookupStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+
+export interface LookupSummary {
+  id: string;
+  lookupId: string;
+  version: string;
+  name: string;
+  description?: string;
+  type: LookupType;
+  status: LookupStatus;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
+export interface LookupUploadResponse {
+  fileRef: string;
+  originalFileName: string;
+  fileSizeBytes: number;
+}
+
+export interface SaveLookupRequest {
+  lookupId: string;
+  version: string;
+  name: string;
+  description?: string;
+  createdBy?: string;
+  lookup: {
+    type: 'FILE';
+    fileRef: string;
+    format: 'CSV';
+  };
+}
 export type EvaluationStatus = 'SUCCESS' | 'ERROR';
 export type TraceLevel = 'MINIMAL' | 'STANDARD' | 'FULL';
 export type NodeType = 'START' | 'RULE' | 'BRANCH' | 'SOURCE' | 'WORKFLOW' | 'MODEL' | 'OUTCOME';
