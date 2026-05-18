@@ -4,6 +4,7 @@ import { Table, Typography, Alert, Spin, Button, Input, Modal } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined,
   CheckCircleFilled, ClockCircleFilled, PauseCircleFilled, StopFilled,
+  ThunderboltFilled, ExclamationCircleFilled,
   DeleteOutlined, BranchesOutlined, UploadOutlined, InboxOutlined,
 } from '@ant-design/icons';
 import { Popconfirm, message } from 'antd';
@@ -296,10 +297,10 @@ export default function PolicyList() {
 
       {/* Stat cards — loaded independently from the backend */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
-        <StatCard label="Total Policies" value={stats?.total    ?? null} accent="#6366f1" icon={<FileTextOutlined />}   loading={statsLoading} />
-        <StatCard label="Active"         value={stats?.active   ?? null} accent="#10b981" icon={<CheckCircleFilled />}  loading={statsLoading} />
-        <StatCard label="Draft"          value={stats?.draft    ?? null} accent="#f59e0b" icon={<ClockCircleFilled />}  loading={statsLoading} />
-        <StatCard label="Archived"       value={stats?.archived ?? null} accent="#ef4444" icon={<StopFilled />}         loading={statsLoading} />
+        <StatCard label="Total Policies"    value={stats?.total          ?? null} accent="#6366f1" icon={<FileTextOutlined />}          loading={statsLoading} />
+        <StatCard label="Live"              value={stats?.live           ?? null} accent="#10b981" icon={<CheckCircleFilled />}         loading={statsLoading} />
+        <StatCard label="Unpublished"       value={stats?.unpublished    ?? null} accent="#f59e0b" icon={<ExclamationCircleFilled />}   loading={statsLoading} />
+        <StatCard label="Evaluations (7d)"  value={stats?.evaluations7d  ?? null} accent="#8b5cf6" icon={<ThunderboltFilled />}         loading={statsLoading} />
       </div>
 
       {/* Table card */}

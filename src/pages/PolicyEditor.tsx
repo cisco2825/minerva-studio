@@ -24,7 +24,7 @@ import {
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
   DownloadOutlined, UndoOutlined, RedoOutlined,
 } from '@ant-design/icons';
-import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition } from '../api/client';
+import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions } from '../api/client';
 import type { LookupSummary, PolicySummary } from '../types';
 import type {
   PolicyNode, PolicyEdge, SavePolicyRequest,
@@ -1459,6 +1459,8 @@ function RightEditPanel({
   const [allPolicies, setAllPolicies] = useState<PolicySummary[]>([]);
   const [policiesLoading, setPoliciesLoading] = useState(false);
   const [outcomesLoading, setOutcomesLoading] = useState(false);
+  const [policyVersions, setPolicyVersions] = useState<PolicySummary[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   useEffect(() => {
     if (active) {
@@ -1466,13 +1468,25 @@ function RightEditPanel({
       setLocalLabel(active.label || '');
       setLocalOutcomes(active.workflowOutcomes || ['APPROVED', 'REJECTED']);
     }
-    // Fetch policy list whenever a WORKFLOW node is opened
+    // Fetch policy list + versions whenever a WORKFLOW node is opened
     if (active?.nodeType === 'WORKFLOW') {
       setPoliciesLoading(true);
       fetchAllPolicies()
         .then(setAllPolicies)
         .catch(() => {})
         .finally(() => setPoliciesLoading(false));
+
+      // If a policy is already configured on this node, pre-load its versions
+      const existingPolicyId = active.config?.policyId as string | undefined;
+      if (existingPolicyId) {
+        setVersionsLoading(true);
+        fetchVersions(existingPolicyId)
+          .then(setPolicyVersions)
+          .catch(() => setPolicyVersions([]))
+          .finally(() => setVersionsLoading(false));
+      } else {
+        setPolicyVersions([]);
+      }
     }
   }, [active?.nodeId]);
 
@@ -1602,8 +1616,18 @@ function RightEditPanel({
                   optionFilterProp="label"
                   style={{ width: '100%' }}
                   onChange={(val: string) => {
-                    setLocalConfig(c => ({ ...c, policyId: val }));
+                    // Reset version when policy changes
+                    setLocalConfig(c => ({ ...c, policyId: val, version: '' }));
+                    setPolicyVersions([]);
                     if (!val) return;
+
+                    // Fetch available versions for the version dropdown
+                    setVersionsLoading(true);
+                    fetchVersions(val)
+                      .then(setPolicyVersions)
+                      .catch(() => setPolicyVersions([]))
+                      .finally(() => setVersionsLoading(false));
+
                     // Auto-populate Expected Outcomes from the selected policy's OUTCOME nodes
                     const summary = allPolicies.find(p => p.policyId === val);
                     if (!summary) return;
@@ -1624,7 +1648,7 @@ function RightEditPanel({
                       .finally(() => setOutcomesLoading(false));
                   }}
                   allowClear
-                  options={allPolicies.map(p => ({
+                  options={allPolicies.filter(p => p.status === 'ACTIVE').map(p => ({
                     value: p.policyId,
                     label: p.name || p.policyId,
                     desc: p.policyId,
@@ -1637,9 +1661,46 @@ function RightEditPanel({
                   )}
                 />
               </FieldGroup>
-              <FieldGroup label="Version" hint="Leave blank to use latest active version">
-                <Input value={(localConfig.version as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, version: e.target.value }))}
-                  placeholder="e.g. 1.0" style={{ borderRadius: 6 }} />
+              <FieldGroup label="Version" hint="Only active versions shown. Leave blank to always use the latest.">
+                <Select
+                  style={{ width: '100%' }}
+                  loading={versionsLoading}
+                  value={(localConfig.version as string) || undefined}
+                  placeholder="Latest active (default)"
+                  allowClear
+                  onChange={(val: string | undefined) => setLocalConfig(c => ({ ...c, version: val ?? '' }))}
+                  disabled={!localConfig.policyId}
+                  options={[
+                    {
+                      value: '',
+                      label: (
+                        <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                          Latest active (default)
+                        </span>
+                      ),
+                    },
+                    ...policyVersions.filter(v => v.status === 'ACTIVE').map(v => ({
+                      value: v.version,
+                      label: (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: '20px' }}>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                            {v.version}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 600,
+                            padding: '0px 5px', lineHeight: '16px',
+                            borderRadius: 8, flexShrink: 0,
+                            ...(v.status === 'ACTIVE'
+                              ? { color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0' }
+                              : { color: '#64748b', background: '#f1f5f9', border: '1px solid #e2e8f0' }),
+                          }}>
+                            {v.status}
+                          </span>
+                        </div>
+                      ),
+                    })),
+                  ]}
+                />
               </FieldGroup>
               <FieldGroup label="Result Key" hint="Defaults to policyId if blank">
                 <Input value={(localConfig.resultKey as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, resultKey: e.target.value }))}

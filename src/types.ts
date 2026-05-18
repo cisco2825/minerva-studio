@@ -235,10 +235,9 @@ export interface PolicySummary {
 
 export interface PolicyStats {
   total: number;
-  active: number;
-  draft: number;
-  inactive: number;
-  archived: number;
+  live: number;
+  unpublished: number;
+  evaluations7d: number;
 }
 
 export interface Policy {
