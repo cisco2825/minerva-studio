@@ -9,7 +9,6 @@ import {
   PlusOutlined, SearchOutlined, TableOutlined,
   DeleteOutlined, InboxOutlined, InfoCircleOutlined, DownloadOutlined,
   CopyOutlined, HistoryOutlined, UploadOutlined, CheckCircleOutlined,
-  PauseCircleOutlined,
 } from '@ant-design/icons';
 import { UserBadge } from '../components/UserBadge';
 import {
@@ -143,6 +142,10 @@ function LookupDetailDrawer({
 
   if (!lookup) return null;
 
+  // Show the ACTIVE version's details in the Info tab; fall back to the prop
+  // (latest-by-date) only if no active version has been loaded yet.
+  const activeVersion = versions.find(v => v.status === 'ACTIVE') ?? lookup;
+
   const usageExample = `field IN @${lookup.lookupId}`;
 
   const handleCopy = () => {
@@ -205,11 +208,10 @@ function LookupDetailDrawer({
     }
   };
 
-  const handleStatusToggle = async (row: LookupSummary) => {
-    const next: LookupStatus = row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+  const handleActivate = async (row: LookupSummary) => {
     try {
-      await updateLookupStatus(row.lookupId, row.version, next);
-      message.success(`Version ${row.version} marked as ${next}`);
+      await updateLookupStatus(row.lookupId, row.version, 'ACTIVE');
+      message.success(`Version ${row.version} is now active`);
       reloadVersions(lookup.lookupId);
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : 'Status update failed');
@@ -241,24 +243,23 @@ function LookupDetailDrawer({
     },
     {
       key: 'actions',
-      width: 64,
+      width: 72,
       render: (_: unknown, row: LookupSummary) => (
-        <div style={{ display: 'flex', gap: 2 }}>
+        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Tooltip title="Download CSV">
             <Button
               type="text" size="small" icon={<DownloadOutlined />}
               onClick={() => downloadLookupFile(row.lookupId, row.version).catch(() => {})}
             />
           </Tooltip>
-          {row.status !== 'ARCHIVED' && (
-            <Tooltip title={row.status === 'ACTIVE' ? 'Deactivate' : 'Set Active'}>
+          {/* Only show Activate for non-active versions. Active version needs no action —
+              it gets retired automatically when another version is activated. */}
+          {row.status !== 'ACTIVE' && row.status !== 'ARCHIVED' && (
+            <Tooltip title="Set as active version">
               <Button
                 type="text" size="small"
-                icon={row.status === 'ACTIVE'
-                  ? <PauseCircleOutlined style={{ color: '#d97706' }} />
-                  : <CheckCircleOutlined style={{ color: '#16a34a' }} />
-                }
-                onClick={() => handleStatusToggle(row)}
+                icon={<CheckCircleOutlined style={{ color: '#16a34a' }} />}
+                onClick={() => handleActivate(row)}
               />
             </Tooltip>
           )}
@@ -329,12 +330,12 @@ function LookupDetailDrawer({
                       {lookup.lookupId}
                     </Text>
                   </InfoRow>
-                  <InfoRow label="Version">
+                  <InfoRow label="Active version">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Text code style={{ fontSize: 12, background: '#f1f5f9', borderColor: '#e2e8f0' }}>
-                        {lookup.version}
+                        {activeVersion.version}
                       </Text>
-                      <StatusBadge status={lookup.status} />
+                      <StatusBadge status={activeVersion.status} />
                     </div>
                   </InfoRow>
                   <InfoRow label="Type">
