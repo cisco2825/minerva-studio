@@ -8,14 +8,15 @@ import type { UploadFile } from 'antd/es/upload/interface';
 import {
   PlusOutlined, SearchOutlined, TableOutlined,
   DeleteOutlined, InboxOutlined, InfoCircleOutlined, DownloadOutlined,
-  CopyOutlined, HistoryOutlined,
+  CopyOutlined, HistoryOutlined, UploadOutlined, CheckCircleOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
 import { UserBadge } from '../components/UserBadge';
 import {
   fetchLookupsPage, fetchLookupVersions, uploadLookupFile,
-  saveLookup, deleteLookup, downloadLookupFile,
+  saveLookup, deleteLookup, downloadLookupFile, updateLookupStatus,
 } from '../api/client';
-import type { LookupSummary } from '../types';
+import type { LookupSummary, LookupStatus } from '../types';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -48,6 +49,54 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+// ── Status badge helper ───────────────────────────────────────────────────────
+
+const STATUS_STYLE: Record<LookupStatus, { color: string; bg: string; border: string }> = {
+  ACTIVE:   { color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  INACTIVE: { color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+  DRAFT:    { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+  ARCHIVED: { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+};
+
+function StatusBadge({ status }: { status: LookupStatus }) {
+  const s = STATUS_STYLE[status] ?? STATUS_STYLE.DRAFT;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '1px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+      letterSpacing: '0.02em', border: `1px solid ${s.border}`,
+      color: s.color, background: s.bg,
+    }}>
+      {status}
+    </span>
+  );
+}
+
+// ── Next-version suggester ────────────────────────────────────────────────────
+
+function suggestNextVersion(versions: LookupSummary[]): string {
+  if (versions.length === 0) return 'v2';
+  // Take the most recent version string and try to increment it
+  const latest = versions[0].version;
+
+  // Pattern: v<N>  e.g. v1 → v2
+  const vNum = latest.match(/^v(\d+)$/i);
+  if (vNum) return `v${parseInt(vNum[1], 10) + 1}`;
+
+  // Pattern: <N>.<M>  e.g. 1.0 → 1.1 or 2.3 → 2.4
+  const semver = latest.match(/^(\d+)\.(\d+)$/);
+  if (semver) return `${semver[1]}.${parseInt(semver[2], 10) + 1}`;
+
+  // Pattern: <N>  e.g. 1 → 2
+  const bare = latest.match(/^(\d+)$/);
+  if (bare) return `${parseInt(bare[1], 10) + 1}`;
+
+  // Fallback: append -2, -3 …
+  const dashNum = latest.match(/^(.+)-(\d+)$/);
+  if (dashNum) return `${dashNum[1]}-${parseInt(dashNum[2], 10) + 1}`;
+  return `${latest}-2`;
+}
+
 // ── Lookup Detail Drawer ──────────────────────────────────────────────────────
 
 function LookupDetailDrawer({
@@ -58,21 +107,39 @@ function LookupDetailDrawer({
   onClose: () => void;
   onDeleted: () => void;
 }) {
-  const [versions, setVersions]     = useState<LookupSummary[]>([]);
-  const [versionsLoading, setVL]    = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [copied, setCopied]         = useState(false);
-  const [activeTab, setActiveTab]   = useState('info');
+  const [versions, setVersions]         = useState<LookupSummary[]>([]);
+  const [versionsLoading, setVL]        = useState(false);
+  const [downloading, setDownloading]   = useState(false);
+  const [copied, setCopied]             = useState(false);
+  const [activeTab, setActiveTab]       = useState('info');
+
+  // ── New-version form state ────────────────────────────────────────────────
+  const [addVersionOpen, setAddVersionOpen] = useState(false);
+  const [newVersion, setNewVersion]         = useState('');
+  const [nvFileList, setNvFileList]         = useState<UploadFile[]>([]);
+  const [nvUploading, setNvUploading]       = useState(false);
+  const [nvPct, setNvPct]                   = useState(0);
+  const [nvError, setNvError]               = useState<string | null>(null);
+
+  const reloadVersions = (lookupId: string) => {
+    setVL(true);
+    fetchLookupVersions(lookupId)
+      .then(vs => setVersions(vs as unknown as LookupSummary[]))
+      .catch(() => setVersions([]))
+      .finally(() => setVL(false));
+  };
 
   useEffect(() => {
     if (!lookup || !open) return;
     setActiveTab('info');
-    setVL(true);
-    fetchLookupVersions(lookup.lookupId)
-      .then(vs => setVersions(vs as unknown as LookupSummary[]))
-      .catch(() => setVersions([]))
-      .finally(() => setVL(false));
+    setAddVersionOpen(false);
+    reloadVersions(lookup.lookupId);
   }, [lookup?.lookupId, open]);
+
+  // Suggest a next version whenever the versions list changes and the form is opened
+  useEffect(() => {
+    if (addVersionOpen) setNewVersion(suggestNextVersion(versions));
+  }, [addVersionOpen, versions]);
 
   if (!lookup) return null;
 
@@ -107,11 +174,58 @@ function LookupDetailDrawer({
     }
   };
 
+  const handleAddVersion = async () => {
+    setNvError(null);
+    if (!newVersion.trim())                    { setNvError('Version is required'); return; }
+    if (!nvFileList[0]?.originFileObj)         { setNvError('Please select a CSV file'); return; }
+
+    try {
+      setNvUploading(true);
+      setNvPct(30);
+      const upload = await uploadLookupFile(nvFileList[0].originFileObj as File, lookup.lookupId, newVersion.trim());
+      setNvPct(70);
+      await saveLookup({
+        lookupId: lookup.lookupId,
+        version: newVersion.trim(),
+        name: lookup.name,
+        description: lookup.description,
+        lookup: { type: 'FILE', fileRef: upload.fileRef, format: 'CSV' },
+      });
+      setNvPct(100);
+      message.success(`Version ${newVersion.trim()} uploaded`);
+      setAddVersionOpen(false);
+      setNvFileList([]);
+      setNvPct(0);
+      reloadVersions(lookup.lookupId);
+      setActiveTab('history');
+    } catch (e: unknown) {
+      setNvError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setNvUploading(false);
+    }
+  };
+
+  const handleStatusToggle = async (row: LookupSummary) => {
+    const next: LookupStatus = row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await updateLookupStatus(row.lookupId, row.version, next);
+      message.success(`Version ${row.version} marked as ${next}`);
+      reloadVersions(lookup.lookupId);
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Status update failed');
+    }
+  };
+
   const versionColumns: ColumnsType<LookupSummary> = [
     {
       title: 'Version',
       dataIndex: 'version',
       render: (v: string) => <Text code style={{ fontSize: 12 }}>{v}</Text>,
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      render: (s: LookupStatus) => <StatusBadge status={s} />,
     },
     {
       title: 'Created',
@@ -121,20 +235,34 @@ function LookupDetailDrawer({
       ),
     },
     {
-      title: 'Created By',
+      title: 'By',
       dataIndex: 'createdBy',
-      render: (v?: string) => <UserBadge name={v} />,
+      render: (v?: string) => <UserBadge name={v} avatarOnly size={22} />,
     },
     {
-      key: 'dl',
-      width: 40,
+      key: 'actions',
+      width: 64,
       render: (_: unknown, row: LookupSummary) => (
-        <Tooltip title="Download CSV">
-          <Button
-            type="text" size="small" icon={<DownloadOutlined />}
-            onClick={() => downloadLookupFile(row.lookupId, row.version).catch(() => {})}
-          />
-        </Tooltip>
+        <div style={{ display: 'flex', gap: 2 }}>
+          <Tooltip title="Download CSV">
+            <Button
+              type="text" size="small" icon={<DownloadOutlined />}
+              onClick={() => downloadLookupFile(row.lookupId, row.version).catch(() => {})}
+            />
+          </Tooltip>
+          {row.status !== 'ARCHIVED' && (
+            <Tooltip title={row.status === 'ACTIVE' ? 'Deactivate' : 'Set Active'}>
+              <Button
+                type="text" size="small"
+                icon={row.status === 'ACTIVE'
+                  ? <PauseCircleOutlined style={{ color: '#d97706' }} />
+                  : <CheckCircleOutlined style={{ color: '#16a34a' }} />
+                }
+                onClick={() => handleStatusToggle(row)}
+              />
+            </Tooltip>
+          )}
+        </div>
       ),
     },
   ];
@@ -143,7 +271,7 @@ function LookupDetailDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      width={520}
+      width={540}
       styles={{ body: { padding: 0 } }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -179,7 +307,7 @@ function LookupDetailDrawer({
     >
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={tab => { setActiveTab(tab); if (tab !== 'history') setAddVersionOpen(false); }}
         size="small"
         style={{ padding: '0 24px' }}
         items={[
@@ -202,9 +330,12 @@ function LookupDetailDrawer({
                     </Text>
                   </InfoRow>
                   <InfoRow label="Version">
-                    <Text code style={{ fontSize: 12, background: '#f1f5f9', borderColor: '#e2e8f0' }}>
-                      {lookup.version}
-                    </Text>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Text code style={{ fontSize: 12, background: '#f1f5f9', borderColor: '#e2e8f0' }}>
+                        {lookup.version}
+                      </Text>
+                      <StatusBadge status={lookup.status} />
+                    </div>
                   </InfoRow>
                   <InfoRow label="Type">
                     <Tag style={{ fontSize: 11, borderRadius: 5, margin: 0 }}>{lookup.type}</Tag>
@@ -298,11 +429,117 @@ function LookupDetailDrawer({
             key: 'history',
             label: (
               <span style={{ fontWeight: 500, fontSize: 13 }}>
-                <HistoryOutlined style={{ marginRight: 5 }} />History
+                <HistoryOutlined style={{ marginRight: 5 }} />
+                History
+                {versions.length > 0 && (
+                  <span style={{
+                    marginLeft: 6, background: '#e2e8f0', color: '#475569',
+                    borderRadius: 10, padding: '0 6px', fontSize: 11, fontWeight: 600,
+                  }}>
+                    {versions.length}
+                  </span>
+                )}
               </span>
             ),
             children: (
               <div style={{ padding: '0 0 24px' }}>
+
+                {/* Upload new version panel */}
+                {!addVersionOpen ? (
+                  <div style={{ marginBottom: 16 }}>
+                    <Button
+                      icon={<UploadOutlined />}
+                      onClick={() => setAddVersionOpen(true)}
+                      style={{
+                        borderRadius: 8, fontWeight: 500, fontSize: 13,
+                        borderColor: '#c7d2fe', color: '#4f46e5', background: '#eef2ff',
+                      }}
+                    >
+                      Upload New Version
+                    </Button>
+                  </div>
+                ) : (
+                  <div style={{
+                    marginBottom: 20, background: '#f8fafc', borderRadius: 10,
+                    border: '1px solid #e2e8f0', overflow: 'hidden',
+                  }}>
+                    {/* Panel header */}
+                    <div style={{
+                      padding: '10px 14px', borderBottom: '1px solid #e2e8f0',
+                      background: '#f1f5f9',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                      <Text style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                        Upload New Version
+                      </Text>
+                      <Button
+                        type="text" size="small"
+                        onClick={() => { setAddVersionOpen(false); setNvError(null); setNvFileList([]); setNvPct(0); }}
+                        style={{ color: '#94a3b8', fontSize: 12 }}
+                        disabled={nvUploading}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+
+                    <div style={{ padding: 14 }}>
+                      {nvError && (
+                        <Alert type="error" message={nvError} showIcon closable
+                          onClose={() => setNvError(null)}
+                          style={{ marginBottom: 12, borderRadius: 8 }} />
+                      )}
+
+                      <div style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                          Version
+                        </Text>
+                        <Input
+                          value={newVersion}
+                          onChange={e => setNewVersion(e.target.value)}
+                          disabled={nvUploading}
+                          style={{ width: 120, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}
+                        />
+                      </div>
+
+                      <div style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                          CSV File
+                        </Text>
+                        <Upload.Dragger
+                          accept=".csv" maxCount={1} fileList={nvFileList}
+                          beforeUpload={() => false}
+                          onChange={({ fileList: fl }) => setNvFileList(fl)}
+                          disabled={nvUploading}
+                          style={{ borderRadius: 8 }}
+                        >
+                          <p className="ant-upload-drag-icon" style={{ marginBottom: 6 }}>
+                            <InboxOutlined style={{ color: '#4f46e5', fontSize: 28 }} />
+                          </p>
+                          <p style={{ fontSize: 12, color: '#374151', margin: 0 }}>
+                            <span style={{ color: '#4f46e5', fontWeight: 600 }}>Click</span> or drag CSV here
+                          </p>
+                        </Upload.Dragger>
+                        {nvUploading && nvPct > 0 && (
+                          <Progress
+                            percent={nvPct} size="small"
+                            status={nvPct === 100 ? 'success' : 'active'}
+                            style={{ marginTop: 8 }}
+                          />
+                        )}
+                      </div>
+
+                      <Button
+                        type="primary" onClick={handleAddVersion} loading={nvUploading}
+                        style={{ borderRadius: 8, background: '#4f46e5', borderColor: '#4f46e5', fontWeight: 500 }}
+                        block
+                      >
+                        Save Version
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Version history table */}
                 <Spin spinning={versionsLoading}>
                   <Table
                     dataSource={versions}
