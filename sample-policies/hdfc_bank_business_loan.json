@@ -1,0 +1,255 @@
+{
+  "description": "HDFC Bank — Business Loan eligibility policy. Stricter criteria: minimum 3-year vintage, ₹50L turnover, CIBIL ≥ 700, eligible business types only, and a second-stage credit assessment. A DECISION_TABLE then maps CIBIL Score × Business Type to a loan tier (PREMIUM_A / PREMIUM_B / STANDARD_A / STANDARD_B) which drives the final interest rate.",
+  "createdBy": "system",
+  "policy": {
+    "id": "hdfc_bank_business_loan",
+    "version": "1.0.0",
+    "name": "HDFC Bank — Business Loan",
+    "type": "RULE_CHAIN",
+    "nodes": [
+      {
+        "id": "start_1",
+        "type": "START",
+        "name": "Start",
+        "position": { "x": 50, "y": 300 }
+      },
+      {
+        "id": "rule_hard_filters",
+        "type": "RULE",
+        "name": "Hard Filter Rules",
+        "position": { "x": 280, "y": 300 },
+        "config": {
+          "rules": [
+            {
+              "name": "min_business_vintage",
+              "expression": "business.vintage_years >= 3",
+              "priority": 1
+            },
+            {
+              "name": "min_annual_turnover",
+              "expression": "business.annual_turnover >= 5000000",
+              "priority": 2
+            },
+            {
+              "name": "min_cibil_score",
+              "expression": "applicant.credit_score >= 700",
+              "priority": 3
+            },
+            {
+              "name": "no_active_defaults",
+              "expression": "applicant.existing_dpd == 0",
+              "priority": 4
+            },
+            {
+              "name": "max_debt_to_equity",
+              "expression": "financials.debt_to_equity <= 2.0",
+              "priority": 5
+            },
+            {
+              "name": "min_net_profit_margin",
+              "expression": "financials.net_profit_margin >= 0.10",
+              "priority": 6
+            },
+            {
+              "name": "eligible_business_type",
+              "expression": "business.type IN ['PRIVATE_LIMITED', 'LLP', 'PARTNERSHIP']",
+              "priority": 7
+            }
+          ]
+        }
+      },
+      {
+        "id": "rule_credit_assessment",
+        "type": "RULE",
+        "name": "Credit Assessment",
+        "position": { "x": 560, "y": 300 },
+        "config": {
+          "rules": [
+            {
+              "name": "loan_within_turnover_cap",
+              "expression": "loan_request.amount <= business.annual_turnover * 3",
+              "priority": 1
+            },
+            {
+              "name": "loan_within_absolute_cap",
+              "expression": "loan_request.amount <= 50000000",
+              "priority": 2
+            },
+            {
+              "name": "strong_profit_margin",
+              "expression": "financials.net_profit_margin >= 0.12",
+              "cantDecideExpression": "financials.net_profit_margin IS NULL",
+              "priority": 3
+            },
+            {
+              "name": "adequate_employee_base",
+              "expression": "business.employee_count >= 5",
+              "cantDecideExpression": "business.employee_count IS NULL",
+              "priority": 4
+            }
+          ]
+        }
+      },
+      {
+        "id": "model_loan_tier",
+        "type": "MODEL",
+        "name": "Loan Tier Decision Table",
+        "position": { "x": 840, "y": 300 },
+        "config": {
+          "models": [
+            {
+              "name": "loan_tier_decision",
+              "type": "DECISION_TABLE",
+              "resultKey": "loan_tier_decision",
+              "priority": 1,
+              "inlineDefinition": {
+                "name": "hdfc_loan_tier_table",
+                "hitPolicy": "FIRST",
+                "inputs": [
+                  {
+                    "name": "CIBIL Score",
+                    "param": "applicant.credit_score",
+                    "datatype": "NUMBER"
+                  },
+                  {
+                    "name": "Business Type",
+                    "param": "business.type",
+                    "datatype": "TEXT"
+                  }
+                ],
+                "output": {
+                  "name": "loan_tier",
+                  "datatype": "TEXT"
+                },
+                "rows": [
+                  {
+                    "priority": 1,
+                    "conditions": [
+                      { "type": "CONDITION", "operator": "gte", "value": 750 },
+                      { "type": "CONDITION", "operator": "eq",  "value": "PRIVATE_LIMITED" }
+                    ],
+                    "output": "PREMIUM_A"
+                  },
+                  {
+                    "priority": 2,
+                    "conditions": [
+                      { "type": "CONDITION", "operator": "gte", "value": 750 },
+                      { "type": "CONDITION", "operator": "in",  "values": ["LLP", "PARTNERSHIP"] }
+                    ],
+                    "output": "PREMIUM_B"
+                  },
+                  {
+                    "priority": 3,
+                    "conditions": [
+                      { "type": "CONDITION", "operator": "gte", "value": 725 },
+                      { "type": "CONDITION", "operator": "in",  "values": ["PRIVATE_LIMITED", "LLP", "PARTNERSHIP"] }
+                    ],
+                    "output": "STANDARD_A"
+                  },
+                  {
+                    "priority": 4,
+                    "conditions": [
+                      { "type": "CONDITION", "operator": "gte", "value": 700 },
+                      { "type": "CONDITION", "operator": "in",  "values": ["PRIVATE_LIMITED", "LLP", "PARTNERSHIP"] }
+                    ],
+                    "output": "STANDARD_B"
+                  },
+                  {
+                    "priority": 5,
+                    "conditions": [
+                      { "type": "ANY" },
+                      { "type": "ANY" }
+                    ],
+                    "output": "INELIGIBLE"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "branch_tier_check",
+        "type": "BRANCH",
+        "name": "Tier Eligibility Check",
+        "position": { "x": 1100, "y": 300 },
+        "config": {
+          "conditions": [
+            {
+              "id": "is_eligible_tier",
+              "label": "Eligible tier (not INELIGIBLE)",
+              "expression": "loan_tier_decision.output != 'INELIGIBLE'"
+            }
+          ]
+        }
+      },
+      {
+        "id": "outcome_approved",
+        "type": "OUTCOME",
+        "name": "Approved",
+        "position": { "x": 1360, "y": 160 },
+        "config": {
+          "outcome": "approved",
+          "outputFields": {
+            "bank": "HDFC Bank",
+            "product": "Business Loan"
+          },
+          "outputExpressions": {
+            "approved_limit": "loan_request.amount",
+            "loan_tier": "loan_tier_decision.output",
+            "interest_rate": "IFELSE(loan_tier_decision.output == 'PREMIUM_A', 10.0, IFELSE(loan_tier_decision.output == 'PREMIUM_B', 10.25, IFELSE(loan_tier_decision.output == 'STANDARD_A', 10.75, 11.25)))"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_tier",
+        "type": "OUTCOME",
+        "name": "Rejected — Tier Ineligible",
+        "position": { "x": 1360, "y": 420 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "HDFC Bank",
+            "reason": "CIBIL score and business type combination does not qualify for any loan tier"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_hard",
+        "type": "OUTCOME",
+        "name": "Rejected — Hard Filter",
+        "position": { "x": 560, "y": 500 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "HDFC Bank",
+            "reason": "Basic eligibility criteria not met"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_credit",
+        "type": "OUTCOME",
+        "name": "Rejected — Credit Assessment",
+        "position": { "x": 840, "y": 500 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "HDFC Bank",
+            "reason": "Loan amount exceeds permissible limit or profit margin insufficient"
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "start_1",              "sourceHandle": "next",          "target": "rule_hard_filters" },
+      { "id": "e2", "source": "rule_hard_filters",    "sourceHandle": "pass",          "target": "rule_credit_assessment" },
+      { "id": "e3", "source": "rule_hard_filters",    "sourceHandle": "fail",          "target": "outcome_rejected_hard" },
+      { "id": "e4", "source": "rule_credit_assessment","sourceHandle": "pass",         "target": "model_loan_tier" },
+      { "id": "e5", "source": "rule_credit_assessment","sourceHandle": "fail",         "target": "outcome_rejected_credit" },
+      { "id": "e6", "source": "model_loan_tier",      "sourceHandle": "next",          "target": "branch_tier_check" },
+      { "id": "e7", "source": "branch_tier_check",    "sourceHandle": "is_eligible_tier", "target": "outcome_approved" },
+      { "id": "e8", "source": "branch_tier_check",    "sourceHandle": "default",       "target": "outcome_rejected_tier" }
+    ]
+  }
+}

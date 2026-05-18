@@ -1,0 +1,179 @@
+{
+  "description": "SBI Bank — Business Loan eligibility policy. Broad reach with mid-range criteria. Two-stage check: basic eligibility then financial health. A CIBIL tier branch produces differentiated approved limits — premium track (CIBIL ≥ 750) gets 4× turnover; standard track (675–749) gets 3×. Both set dynamic output expressions so the master policy can read exact limits.",
+  "createdBy": "system",
+  "policy": {
+    "id": "sbi_bank_business_loan",
+    "version": "1.0.0",
+    "name": "SBI Bank — Business Loan",
+    "type": "RULE_CHAIN",
+    "nodes": [
+      {
+        "id": "start_1",
+        "type": "START",
+        "name": "Start",
+        "position": { "x": 50, "y": 300 }
+      },
+      {
+        "id": "rule_basic_eligibility",
+        "type": "RULE",
+        "name": "Basic Eligibility",
+        "position": { "x": 280, "y": 300 },
+        "config": {
+          "rules": [
+            {
+              "name": "min_business_vintage",
+              "expression": "business.vintage_years >= 3",
+              "priority": 1
+            },
+            {
+              "name": "min_annual_turnover",
+              "expression": "business.annual_turnover >= 2500000",
+              "priority": 2
+            },
+            {
+              "name": "min_cibil_score",
+              "expression": "applicant.credit_score >= 675",
+              "priority": 3
+            },
+            {
+              "name": "no_active_defaults",
+              "expression": "applicant.existing_dpd == 0",
+              "priority": 4
+            },
+            {
+              "name": "loan_within_absolute_cap",
+              "expression": "loan_request.amount <= 20000000",
+              "priority": 5
+            }
+          ]
+        }
+      },
+      {
+        "id": "rule_financial_health",
+        "type": "RULE",
+        "name": "Financial Health Check",
+        "position": { "x": 560, "y": 300 },
+        "config": {
+          "rules": [
+            {
+              "name": "healthy_current_ratio",
+              "expression": "financials.current_ratio >= 1.2",
+              "cantDecideExpression": "financials.current_ratio IS NULL",
+              "priority": 1
+            },
+            {
+              "name": "manageable_leverage",
+              "expression": "financials.debt_to_equity <= 3.0",
+              "priority": 2
+            },
+            {
+              "name": "minimum_profit",
+              "expression": "financials.net_profit_margin >= 0.05",
+              "cantDecideExpression": "financials.net_profit_margin IS NULL",
+              "priority": 3
+            },
+            {
+              "name": "loan_to_turnover_ratio",
+              "expression": "loan_request.amount <= business.annual_turnover * 4",
+              "priority": 4
+            }
+          ]
+        }
+      },
+      {
+        "id": "branch_cibil_tier",
+        "type": "BRANCH",
+        "name": "CIBIL Tier",
+        "position": { "x": 840, "y": 300 },
+        "config": {
+          "conditions": [
+            {
+              "id": "premium_track",
+              "label": "Premium (CIBIL ≥ 750)",
+              "expression": "applicant.credit_score >= 750"
+            },
+            {
+              "id": "standard_track",
+              "label": "Standard (CIBIL 675–749)",
+              "expression": "applicant.credit_score >= 675"
+            }
+          ]
+        }
+      },
+      {
+        "id": "outcome_approved_premium",
+        "type": "OUTCOME",
+        "name": "Approved — Premium",
+        "position": { "x": 1100, "y": 150 },
+        "config": {
+          "outcome": "approved",
+          "outputFields": {
+            "bank": "SBI Bank",
+            "product": "Business Loan",
+            "track": "Premium"
+          },
+          "outputExpressions": {
+            "max_loan_amount": "business.annual_turnover * 4",
+            "approved_limit": "IFELSE(loan_request.amount <= business.annual_turnover * 4, loan_request.amount, business.annual_turnover * 4)",
+            "interest_rate": "IFELSE(financials.debt_to_equity <= 1.0, 9.5, 10.5)"
+          }
+        }
+      },
+      {
+        "id": "outcome_approved_standard",
+        "type": "OUTCOME",
+        "name": "Approved — Standard",
+        "position": { "x": 1100, "y": 320 },
+        "config": {
+          "outcome": "approved",
+          "outputFields": {
+            "bank": "SBI Bank",
+            "product": "Business Loan",
+            "track": "Standard",
+            "interest_rate": 11.5
+          },
+          "outputExpressions": {
+            "max_loan_amount": "business.annual_turnover * 3",
+            "approved_limit": "IFELSE(loan_request.amount <= business.annual_turnover * 3, loan_request.amount, business.annual_turnover * 3)"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_hard",
+        "type": "OUTCOME",
+        "name": "Rejected — Basic Eligibility",
+        "position": { "x": 560, "y": 490 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "SBI Bank",
+            "reason": "Basic eligibility criteria not met"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_financial",
+        "type": "OUTCOME",
+        "name": "Rejected — Financial Health",
+        "position": { "x": 840, "y": 490 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "SBI Bank",
+            "reason": "Financial health criteria not met"
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "start_1",             "sourceHandle": "next",           "target": "rule_basic_eligibility" },
+      { "id": "e2", "source": "rule_basic_eligibility", "sourceHandle": "pass",         "target": "rule_financial_health" },
+      { "id": "e3", "source": "rule_basic_eligibility", "sourceHandle": "fail",         "target": "outcome_rejected_hard" },
+      { "id": "e4", "source": "rule_financial_health",  "sourceHandle": "pass",         "target": "branch_cibil_tier" },
+      { "id": "e5", "source": "rule_financial_health",  "sourceHandle": "fail",         "target": "outcome_rejected_financial" },
+      { "id": "e6", "source": "branch_cibil_tier",      "sourceHandle": "premium_track","target": "outcome_approved_premium" },
+      { "id": "e7", "source": "branch_cibil_tier",      "sourceHandle": "standard_track","target": "outcome_approved_standard" },
+      { "id": "e8", "source": "branch_cibil_tier",      "sourceHandle": "default",      "target": "outcome_rejected_financial" }
+    ]
+  }
+}

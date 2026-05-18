@@ -206,20 +206,62 @@ function VersionsTab({ policyId }: { policyId: string }) {
 // ── Result Display ────────────────────────────────────────────────────────────
 
 function ResultDisplay({ result }: { result: EvaluationResult }) {
-  const outcomeColor = result.outcome === 'APPROVED' || result.outcome === 'PASS'
-    ? 'success' : result.outcome === 'REJECTED' || result.outcome === 'FAIL'
-    ? 'error' : 'processing';
+  const isCustomOutput = result.customOutput !== undefined && result.customOutput !== null;
+
+  const outcomeColor = isCustomOutput
+    ? 'processing'
+    : result.outcome === 'APPROVED' || result.outcome?.toLowerCase() === 'approved' || result.outcome === 'PASS'
+    ? 'success'
+    : result.outcome === 'REJECTED' || result.outcome?.toLowerCase() === 'rejected' || result.outcome === 'FAIL'
+    ? 'error'
+    : 'processing';
+
+  const outcomeLabel = isCustomOutput ? 'Custom Output' : (result.outcome ?? 'No outcome');
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space align="center" size={16}>
         <Badge status={outcomeColor} />
-        <Text strong style={{ fontSize: 20 }}>{result.outcome ?? 'No outcome'}</Text>
+        <Text strong style={{ fontSize: 20 }}>{outcomeLabel}</Text>
         <Text type="secondary">{result.evaluationMs}ms</Text>
       </Space>
 
       {result.triggeredBy && (
         <Text type="secondary">Triggered by: <Text code>{result.triggeredBy}</Text></Text>
+      )}
+
+      {/* ── Custom Output ── */}
+      {isCustomOutput && (
+        <>
+          <Divider orientation="left" plain>Output</Divider>
+          <pre style={{
+            background: '#0f172a', color: '#e2e8f0',
+            borderRadius: 8, padding: '12px 16px',
+            fontSize: 12, lineHeight: 1.6,
+            overflowX: 'auto', margin: 0,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          }}>
+            {JSON.stringify(result.customOutput, null, 2)}
+          </pre>
+        </>
+      )}
+
+      {/* ── Standard output fields ── */}
+      {!isCustomOutput && result.outputFields && Object.keys(result.outputFields).length > 0 && (
+        <>
+          <Divider orientation="left" plain>Output Fields</Divider>
+          <Table
+            dataSource={Object.entries(result.outputFields).map(([k, v]) => ({ key: k, value: v }))}
+            rowKey="key"
+            size="small"
+            pagination={false}
+            columns={[
+              { title: 'Field', dataIndex: 'key',   render: (k: string) => <Text code>{k}</Text> },
+              { title: 'Value', dataIndex: 'value', render: (v: unknown) =>
+                  <Text>{typeof v === 'object' ? JSON.stringify(v) : String(v ?? '—')}</Text> },
+            ]}
+          />
+        </>
       )}
 
       {result.ruleResults && result.ruleResults.length > 0 && (
@@ -239,7 +281,8 @@ function ResultDisplay({ result }: { result: EvaluationResult }) {
                   ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
                   : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
               },
-              { title: 'Action', dataIndex: 'action', render: (a: string) => <Tag>{a}</Tag> },
+              { title: 'Action', dataIndex: 'action', render: (a: string) => a ? <Tag>{a}</Tag> : '—' },
+              { title: 'Outcome', dataIndex: 'outcome', render: (o: string) => o ? <Tag color="blue">{o}</Tag> : '—' },
             ]}
           />
         </>

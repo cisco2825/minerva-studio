@@ -13,7 +13,7 @@ import dagre from 'dagre';
 import 'reactflow/dist/style.css';
 import {
   Button, Input, Select, Drawer, Modal, Typography, Space, Tag, Tooltip,
-  Divider, message, Popover,
+  message, Popover,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, PlayCircleOutlined,
@@ -22,9 +22,9 @@ import {
   DatabaseOutlined, ApiOutlined, SaveOutlined,
   CalculatorOutlined, TableOutlined, FunctionOutlined,
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
-  DownloadOutlined,
+  DownloadOutlined, UndoOutlined, RedoOutlined,
 } from '@ant-design/icons';
-import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies } from '../api/client';
+import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition } from '../api/client';
 import type { LookupSummary, PolicySummary } from '../types';
 import type {
   PolicyNode, PolicyEdge, SavePolicyRequest,
@@ -1017,7 +1017,7 @@ const OUTCOME_META: Record<string, { accent: string; accentLight: string; icon: 
 
 function OutcomeNode({ id, data }: NodeProps) {
   const cfg: OutcomeNodeConfig = (data.config as OutcomeNodeConfig) || { outcome: '' };
-  const m = OUTCOME_META[cfg.outcome] || { accent: '#6b7280', accentLight: '#f9fafb', icon: <ApartmentOutlined /> };
+  const m = OUTCOME_META[(cfg.outcome || '').toUpperCase()] || { accent: '#6b7280', accentLight: '#f9fafb', icon: <ApartmentOutlined /> };
   const editCtx = useContext(EditPanelContext);
   const openEdit = () => editCtx?.openEdit({ nodeId: id, nodeType: 'OUTCOME', label: data.label, config: data.config || {} });
   const label = cfg.outcome || data.label || 'Outcome';
@@ -1166,6 +1166,20 @@ function rfNodesToPolicy(nodes: Node[], edges: Edge[]): { policyNodes: PolicyNod
 
 // ── Inline editors ────────────────────────────────────────────────────────────
 
+// ── Field label helper ────────────────────────────────────────────────────────
+
+function FieldGroup({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
+        {label}
+      </div>
+      {hint && <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 5, lineHeight: 1.5 }}>{hint}</div>}
+      {children}
+    </div>
+  );
+}
+
 function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (r: GraphRule[]) => void }) {
   const add = () => onChange([...rules, { name: `rule_${rules.length + 1}`, expression: '', priority: rules.length + 1 }]);
   const update = (i: number, field: keyof GraphRule, val: string | number) => {
@@ -1174,36 +1188,48 @@ function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (
   const remove = (i: number) => onChange(rules.filter((_, idx) => idx !== i));
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {rules.map((r, i) => (
-        <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text strong style={{ fontSize: 12 }}>Rule {i + 1}</Text>
-            <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(i)} />
+        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+          {/* Card header */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', gap: 8 }}>
+            <span style={{ width: 18, height: 18, background: '#e0e7ff', color: '#6366f1', borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+              {i + 1}
+            </span>
+            <span style={{ fontWeight: 600, fontSize: 12, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {r.name || `Rule ${i + 1}`}
+            </span>
+            <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12, transition: 'color 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
+              <DeleteOutlined />
+            </button>
           </div>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Name</Text>
-              <Input size="small" value={r.name} onChange={e => update(i, 'name', e.target.value)} style={{ marginTop: 4 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Expression</Text>
+          {/* Fields */}
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <FieldGroup label="Name">
+              <Input size="small" value={r.name} onChange={e => update(i, 'name', e.target.value)} style={{ borderRadius: 6 }} />
+            </FieldGroup>
+            <FieldGroup label="Expression">
               <Input.TextArea size="small" value={r.expression} rows={2}
                 onChange={e => update(i, 'expression', e.target.value)}
-                style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Can't Decide Expression</Text>
+                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+            </FieldGroup>
+            <FieldGroup label="Can't Decide Expression">
               <Input.TextArea size="small" value={r.cantDecideExpression || ''} rows={2}
                 onChange={e => update(i, 'cantDecideExpression', e.target.value)}
                 placeholder="e.g. bureau.score == nil"
-                style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12 }} />
-            </div>
-          </Space>
+                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+            </FieldGroup>
+          </div>
         </div>
       ))}
-      <Button size="small" icon={<PlusOutlined />} onClick={add} block>Add Rule</Button>
-    </Space>
+      <button onClick={add} style={{ background: '#fff', border: '1.5px dashed #c7d2fe', borderRadius: 8, color: '#6366f1', fontSize: 12, fontWeight: 600, padding: '8px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', transition: 'background 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#eef2ff')}
+        onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+        <PlusOutlined style={{ fontSize: 11 }} /> Add Rule
+      </button>
+    </div>
   );
 }
 
@@ -1215,29 +1241,36 @@ function InlineConditionEditor({ conditions, onChange }: { conditions: BranchCon
   const remove = (i: number) => onChange(conditions.filter((_, idx) => idx !== i));
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {conditions.map((c, i) => (
-        <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text strong style={{ fontSize: 12 }}>Condition {i + 1}</Text>
-            <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(i)} />
+        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: '#fffbeb', borderBottom: '1px solid #fef3c7', gap: 8 }}>
+            <span style={{ width: 18, height: 18, background: '#fef3c7', color: '#d97706', borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0 }}>IF</span>
+            <span style={{ fontWeight: 600, fontSize: 12, color: '#1e293b', flex: 1 }}>{c.label || `Condition ${i + 1}`}</span>
+            <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12 }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
+              <DeleteOutlined />
+            </button>
           </div>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Label</Text>
-              <Input size="small" value={c.label || ''} onChange={e => update(i, 'label', e.target.value)} style={{ marginTop: 4 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Expression</Text>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <FieldGroup label="Label">
+              <Input size="small" value={c.label || ''} onChange={e => update(i, 'label', e.target.value)} style={{ borderRadius: 6 }} />
+            </FieldGroup>
+            <FieldGroup label="Expression">
               <Input.TextArea size="small" value={c.expression} rows={2}
                 onChange={e => update(i, 'expression', e.target.value)}
-                style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12 }} />
-            </div>
-          </Space>
+                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+            </FieldGroup>
+          </div>
         </div>
       ))}
-      <Button size="small" icon={<PlusOutlined />} onClick={add} block>Add Condition</Button>
-    </Space>
+      <button onClick={add} style={{ background: '#fff', border: '1.5px dashed #fcd34d', borderRadius: 8, color: '#d97706', fontSize: 12, fontWeight: 600, padding: '8px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', transition: 'background 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#fffbeb')}
+        onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+        <PlusOutlined style={{ fontSize: 11 }} /> Add Condition
+      </button>
+    </div>
   );
 }
 
@@ -1249,74 +1282,83 @@ function ModelSetEditor({
   const remove = (i: number) => onChange(models.filter((_, idx) => idx !== i));
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {models.map((m, i) => (
-        <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text strong style={{ fontSize: 12 }}>Model {i + 1}</Text>
-            <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(i)} />
+        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: '#fff7ed', borderBottom: '1px solid #fed7aa', gap: 8 }}>
+            <span style={{ width: 18, height: 18, background: '#fed7aa', color: '#ea580c', borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+              {i + 1}
+            </span>
+            <span style={{ fontWeight: 600, fontSize: 12, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {m.name || `Model ${i + 1}`}
+            </span>
+            <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12 }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
+              <DeleteOutlined />
+            </button>
           </div>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 11 }}>Name</Text>
-                <Input size="small" value={m.name} onChange={e => update(i, { name: e.target.value })} style={{ marginTop: 4 }} />
+                <FieldGroup label="Name">
+                  <Input size="small" value={m.name} onChange={e => update(i, { name: e.target.value })} style={{ borderRadius: 6 }} />
+                </FieldGroup>
               </div>
               <div style={{ flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 11 }}>Type</Text>
-                <Select size="small" value={m.type} onChange={v => update(i, { type: v as ModelType })}
-                  style={{ marginTop: 4, width: '100%' }}
-                  options={[{ value: 'EXPRESSION', label: 'Expression' }, { value: 'SCORECARD', label: 'Scorecard' }, { value: 'DECISION_TABLE', label: 'Decision Table' }]} />
+                <FieldGroup label="Type">
+                  <Select size="small" value={m.type} onChange={v => update(i, { type: v as ModelType })}
+                    style={{ width: '100%' }}
+                    options={[{ value: 'EXPRESSION', label: 'Expression' }, { value: 'SCORECARD', label: 'Scorecard' }, { value: 'DECISION_TABLE', label: 'Decision Table' }]} />
+                </FieldGroup>
               </div>
             </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Result Key</Text>
+            <FieldGroup label="Result Key">
               <Input size="small" value={m.resultKey || ''} onChange={e => update(i, { resultKey: e.target.value })}
-                placeholder={m.name || 'e.g. dpd_score'} style={{ marginTop: 4 }} />
-            </div>
+                placeholder={m.name || 'e.g. dpd_score'} style={{ borderRadius: 6 }} />
+            </FieldGroup>
             {m.type === 'EXPRESSION' && (
-              <div>
-                <Text type="secondary" style={{ fontSize: 11 }}>Expression</Text>
+              <FieldGroup label="Expression">
                 <Input.TextArea size="small" value={m.expression || ''} rows={2}
                   onChange={e => update(i, { expression: e.target.value })}
-                  style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12 }} />
-              </div>
+                  style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+              </FieldGroup>
             )}
             {(m.type === 'SCORECARD' || m.type === 'DECISION_TABLE') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe' }}>
-                <TableOutlined style={{ color: '#2563eb' }} />
-                <Text style={{ fontSize: 11, flex: 1, color: '#1e40af' }}>
-                  {m.inlineDefinition ? 'Definition configured' : 'Not configured yet'}
-                </Text>
-                <Button size="small" type="primary" ghost onClick={() => onOpenSubEditor(i, m)}>Open Editor ↗</Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+                <TableOutlined style={{ color: '#2563eb', fontSize: 14 }} />
+                <span style={{ fontSize: 12, flex: 1, color: '#1e40af', fontWeight: 500 }}>
+                  {m.inlineDefinition ? '✓ Definition configured' : 'Not configured yet'}
+                </span>
+                <Button size="small" type="primary" ghost onClick={() => onOpenSubEditor(i, m)} style={{ borderRadius: 6 }}>Open Editor ↗</Button>
               </div>
             )}
-          </Space>
+          </div>
         </div>
       ))}
-      <Button size="small" icon={<PlusOutlined />} onClick={add} block>Add Model</Button>
-    </Space>
+      <button onClick={add} style={{ background: '#fff', border: '1.5px dashed #fed7aa', borderRadius: 8, color: '#ea580c', fontSize: 12, fontWeight: 600, padding: '8px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', transition: 'background 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#fff7ed')}
+        onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+        <PlusOutlined style={{ fontSize: 11 }} /> Add Model
+      </button>
+    </div>
   );
 }
 
 function InlineCustomOutputEditor({ template, onChange }: { template: string; onChange: (t: string) => void }) {
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={10}>
-      <div>
-        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Template</Text>
-        <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, marginBottom: 6, lineHeight: 1.5 }}>
-          JSON-like structure. Quoted values are literals; unquoted values are evaluated as expressions.
-          Use <Text code style={{ fontSize: 10 }}>workflows['policyId version'].outcome</Text> to reference sub-policy results.
-        </div>
-        <Input.TextArea
-          value={template}
-          rows={12}
-          onChange={e => onChange(e.target.value)}
-          placeholder={`[\n  {\n    "bank_name": "AU Small Finance Bank",\n    "decision": IFELSE(workflows['LMP_AU v1.0'].outcome == "approved", "approved", "rejected")\n  }\n]`}
-          style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11 }}
-        />
-      </div>
-    </Space>
+    <FieldGroup
+      label="Template"
+      hint={'JSON-like structure. Quoted values are literals; unquoted values are expressions. Use workflows[\'policyId version\'].outcome to reference sub-policy results.'}
+    >
+      <Input.TextArea
+        value={template}
+        rows={14}
+        onChange={e => onChange(e.target.value)}
+        placeholder={`[\n  {\n    "bank_name": "AU Small Finance Bank",\n    "decision": IFELSE(workflows['LMP_AU v1.0'].outcome == "approved", "approved", "rejected")\n  }\n]`}
+        style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }}
+      />
+    </FieldGroup>
   );
 }
 
@@ -1333,62 +1375,65 @@ function InlineOutcomeEditor({ config, onChange }: {
   };
   const updateExprKey = (oldKey: string, newKey: string) => {
     const next: Record<string, string> = {};
-    for (const [k, v] of Object.entries(exprs)) {
-      next[k === oldKey ? newKey : k] = v;
-    }
+    for (const [k, v] of Object.entries(exprs)) { next[k === oldKey ? newKey : k] = v; }
     onChange({ ...config, outputExpressions: next });
   };
   const updateExprVal = (key: string, val: string) => {
     onChange({ ...config, outputExpressions: { ...exprs, [key]: val } });
   };
   const removeExpr = (key: string) => {
-    const next = { ...exprs };
-    delete next[key];
+    const next = { ...exprs }; delete next[key];
     onChange({ ...config, outputExpressions: next });
   };
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={12}>
-      <div>
-        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Outcome Value</Text>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <FieldGroup label="Outcome Value">
         <Input
           value={config.outcome || ''}
           onChange={e => onChange({ ...config, outcome: e.target.value })}
-          placeholder="e.g. APPROVED"
-          style={{ marginTop: 4 }}
+          placeholder="e.g. approved"
+          style={{ borderRadius: 6 }}
         />
-      </div>
+      </FieldGroup>
 
       <div>
-        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Output Expressions</Text>
-        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, marginTop: 2, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Output Expressions</div>
+        <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 10, lineHeight: 1.6 }}>
           Evaluated at runtime against context. Merged with static output fields; expressions win on key conflicts.
         </div>
-        <Space direction="vertical" style={{ width: '100%' }} size={6}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {exprEntries.map(([key, val]) => (
-            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <Input
                 size="small"
                 value={key}
                 onChange={e => updateExprKey(key, e.target.value)}
                 placeholder="key"
-                style={{ width: 110, flexShrink: 0 }}
+                style={{ width: 110, flexShrink: 0, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
               />
               <Input
                 size="small"
                 value={val}
                 onChange={e => updateExprVal(key, e.target.value)}
                 placeholder="expression"
-                style={{ flex: 1, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11 }}
+                style={{ flex: 1, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
               />
-              <Button type="text" danger size="small" icon={<DeleteOutlined />}
-                onClick={() => removeExpr(key)} style={{ flexShrink: 0 }} />
+              <button onClick={() => removeExpr(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12, flexShrink: 0 }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
+                <DeleteOutlined />
+              </button>
             </div>
           ))}
-          <Button size="small" icon={<PlusOutlined />} onClick={addExpr} block>Add Expression</Button>
-        </Space>
+          <button onClick={addExpr} style={{ background: '#fff', border: '1.5px dashed #d1d5db', borderRadius: 8, color: '#6b7280', fontSize: 12, fontWeight: 600, padding: '7px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', transition: 'background 0.15s' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f9fafb')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+            <PlusOutlined style={{ fontSize: 11 }} /> Add Expression
+          </button>
+        </div>
       </div>
-    </Space>
+    </div>
   );
 }
 
@@ -1399,12 +1444,13 @@ interface ActiveEdit extends EditRequest {
 }
 
 function RightEditPanel({
-  active, onClose, onSave, onOpenModelEditor,
+  active, onClose, onSave, onOpenModelEditor, onDelete,
 }: {
   active: ActiveEdit | null;
   onClose: () => void;
   onSave: (nodeId: string, config: Record<string, unknown>, label?: string, workflowOutcomes?: string[]) => void;
   onOpenModelEditor: (nodeId: string, i: number, m: ModelEntry) => void;
+  onDelete?: (nodeId: string) => void;
 }) {
   const [localConfig, setLocalConfig] = useState<Record<string, unknown>>({});
   const [localLabel, setLocalLabel] = useState('');
@@ -1412,6 +1458,7 @@ function RightEditPanel({
   const [newOutcome, setNewOutcome] = useState('');
   const [allPolicies, setAllPolicies] = useState<PolicySummary[]>([]);
   const [policiesLoading, setPoliciesLoading] = useState(false);
+  const [outcomesLoading, setOutcomesLoading] = useState(false);
 
   useEffect(() => {
     if (active) {
@@ -1431,7 +1478,9 @@ function RightEditPanel({
 
   if (!active) return null;
 
-  const hc = NODE_THEME[active.nodeType] || NODE_THEME.RULE;
+  const hc = active.nodeType === 'OUTCOME'
+    ? (OUTCOME_META[((active.config?.outcome as string) || '').toUpperCase()] || NODE_THEME.OUTCOME)
+    : (NODE_THEME[active.nodeType] || NODE_THEME.RULE);
 
   const handleSave = () => {
     onSave(active.nodeId, localConfig, localLabel, localOutcomes);
@@ -1442,13 +1491,28 @@ function RightEditPanel({
     <Drawer
       open={!!active}
       onClose={onClose}
-      width={360}
-      styles={{ header: { display: 'none' }, body: { padding: 0 } }}
+      width={380}
+      styles={{ header: { display: 'none' }, body: { padding: 0, background: '#f8fafc' } }}
       mask={false}
     >
       {/* Panel header */}
-      <div style={{ background: hc.accent, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14 }}>
+      <div style={{
+        background: '#fff',
+        borderTop: `3px solid ${hc.accent}`,
+        padding: '16px 20px 14px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+        borderBottom: '1px solid #f1f5f9',
+      }}>
+        <div style={{
+          width: 38, height: 38,
+          borderRadius: 10,
+          background: hc.accentLight,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: hc.accent, fontSize: 17,
+          flexShrink: 0,
+        }}>
           {active.nodeType === 'RULE'          ? <ThunderboltOutlined /> :
            active.nodeType === 'BRANCH'        ? <ForkOutlined /> :
            active.nodeType === 'SOURCE'        ? <DatabaseOutlined /> :
@@ -1458,46 +1522,66 @@ function RightEditPanel({
            active.nodeType === 'CUSTOM_OUTPUT' ? <FunctionOutlined /> :
            <EllipsisOutlined />}
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-            {active.nodeType.replace('_', ' ')}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: hc.accentLight, color: hc.accent,
+            borderRadius: 4, padding: '1px 8px',
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
+            marginBottom: 4,
+          }}>
+            {active.nodeType.replace(/_/g, ' ')}
           </div>
-          <div style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>{active.label}</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {active.label}
+          </div>
         </div>
-        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, color: '#fff', cursor: 'pointer', padding: '4px 8px', fontSize: 13 }}>✕</button>
+        <button onClick={onClose} style={{
+          background: '#f1f5f9', border: 'none', borderRadius: 6,
+          color: '#64748b', cursor: 'pointer',
+          width: 28, height: 28,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, flexShrink: 0,
+        }}>✕</button>
       </div>
 
       {/* Panel body */}
-      <div style={{ padding: 16, overflowY: 'auto', height: 'calc(100% - 120px)' }}>
+      <div style={{ padding: '20px', overflowY: 'auto', height: 'calc(100% - 120px)' }}>
 
         {/* Node name */}
-        <div style={{ marginBottom: 16 }}>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Node Name</Text>
-          <Input value={localLabel} onChange={e => setLocalLabel(e.target.value)}
-            style={{ marginTop: 4 }} />
+        <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', marginBottom: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+          <FieldGroup label="Node Name">
+            <Input value={localLabel} onChange={e => setLocalLabel(e.target.value)}
+              style={{ borderRadius: 6, fontSize: 13 }} />
+          </FieldGroup>
         </div>
 
-        <Divider style={{ margin: '12px 0' }} />
+        {/* Type-specific editor in a card */}
+        <div style={{ background: active.nodeType === 'CUSTOM_OUTPUT' || active.nodeType === 'OUTCOME' ? 'transparent' : 'transparent' }}>
 
-        {/* Type-specific editor */}
-        {active.nodeType === 'RULE' && (
-          <InlineRuleEditor
-            rules={(localConfig.rules as GraphRule[]) || []}
-            onChange={rules => setLocalConfig(c => ({ ...c, rules }))}
-          />
-        )}
+          {active.nodeType === 'RULE' && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Rules</div>
+              <InlineRuleEditor
+                rules={(localConfig.rules as GraphRule[]) || []}
+                onChange={rules => setLocalConfig(c => ({ ...c, rules }))}
+              />
+            </div>
+          )}
 
-        {active.nodeType === 'BRANCH' && (
-          <InlineConditionEditor
-            conditions={(localConfig.conditions as BranchCondition[]) || []}
-            onChange={conditions => setLocalConfig(c => ({ ...c, conditions }))}
-          />
-        )}
+          {active.nodeType === 'BRANCH' && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Conditions</div>
+              <InlineConditionEditor
+                conditions={(localConfig.conditions as BranchCondition[]) || []}
+                onChange={conditions => setLocalConfig(c => ({ ...c, conditions }))}
+              />
+            </div>
+          )}
 
-        {active.nodeType === 'SOURCE' && (
-          <div>
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Sources</Text>
-            <div style={{ marginTop: 8 }}>
+          {active.nodeType === 'SOURCE' && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Sources</div>
               <SourceSelector
                 value={((localConfig.sources as (SourceItem | string)[]) || []).map(s =>
                   typeof s === 'string' ? { type: 'lookup' as const, id: s, label: s } : s
@@ -1505,90 +1589,144 @@ function RightEditPanel({
                 onChange={sources => setLocalConfig(c => ({ ...c, sources }))}
               />
             </div>
-          </div>
-        )}
+          )}
 
-        {active.nodeType === 'WORKFLOW' && (
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          {active.nodeType === 'WORKFLOW' && (
+            <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <FieldGroup label="Policy">
+                <Select
+                  showSearch
+                  loading={policiesLoading}
+                  value={(localConfig.policyId as string) || undefined}
+                  placeholder="Search and select a policy…"
+                  optionFilterProp="label"
+                  style={{ width: '100%' }}
+                  onChange={(val: string) => {
+                    setLocalConfig(c => ({ ...c, policyId: val }));
+                    if (!val) return;
+                    // Auto-populate Expected Outcomes from the selected policy's OUTCOME nodes
+                    const summary = allPolicies.find(p => p.policyId === val);
+                    if (!summary) return;
+                    setOutcomesLoading(true);
+                    fetchPolicyDefinition(val, summary.version)
+                      .then(policy => {
+                        const outcomes = [
+                          ...new Set(
+                            (policy.nodes || [])
+                              .filter(n => n.type === 'OUTCOME')
+                              .map(n => (n.config as { outcome?: string })?.outcome)
+                              .filter((o): o is string => !!o)
+                          ),
+                        ];
+                        if (outcomes.length > 0) setLocalOutcomes(outcomes);
+                      })
+                      .catch(() => {})
+                      .finally(() => setOutcomesLoading(false));
+                  }}
+                  allowClear
+                  options={allPolicies.map(p => ({
+                    value: p.policyId,
+                    label: p.name || p.policyId,
+                    desc: p.policyId,
+                  }))}
+                  optionRender={option => (
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 13 }}>{option.data.label}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{option.data.desc}</div>
+                    </div>
+                  )}
+                />
+              </FieldGroup>
+              <FieldGroup label="Version" hint="Leave blank to use latest active version">
+                <Input value={(localConfig.version as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, version: e.target.value }))}
+                  placeholder="e.g. 1.0" style={{ borderRadius: 6 }} />
+              </FieldGroup>
+              <FieldGroup label="Result Key" hint="Defaults to policyId if blank">
+                <Input value={(localConfig.resultKey as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, resultKey: e.target.value }))}
+                  placeholder={(localConfig.policyId as string) || 'defaults to policyId'} style={{ borderRadius: 6 }} />
+              </FieldGroup>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Expected Outcomes
+                  {outcomesLoading && <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— detecting…</span>}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {localOutcomes.map(o => (
+                    <Tag key={o} closable onClose={() => setLocalOutcomes(localOutcomes.filter(x => x !== o))} color="blue" style={{ borderRadius: 6 }}>{o}</Tag>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input size="small" value={newOutcome} onChange={e => setNewOutcome(e.target.value.toUpperCase())}
+                    placeholder="Add outcome" style={{ flex: 1, borderRadius: 6 }}
+                    onPressEnter={() => { if (newOutcome) { setLocalOutcomes([...localOutcomes, newOutcome]); setNewOutcome(''); } }} />
+                  <Button size="small" onClick={() => { if (newOutcome) { setLocalOutcomes([...localOutcomes, newOutcome]); setNewOutcome(''); } }} style={{ borderRadius: 6 }}>Add</Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {active.nodeType === 'MODEL' && (
             <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Policy</Text>
-              <Select
-                showSearch
-                loading={policiesLoading}
-                value={(localConfig.policyId as string) || undefined}
-                placeholder="Search and select a policy…"
-                optionFilterProp="label"
-                style={{ width: '100%', marginTop: 4 }}
-                onChange={(val: string) => setLocalConfig(c => ({ ...c, policyId: val }))}
-                allowClear
-                options={allPolicies.map(p => ({
-                  value: p.policyId,
-                  label: p.name || p.policyId,
-                  desc: p.policyId,
-                }))}
-                optionRender={option => (
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: 13 }}>{option.data.label}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{option.data.desc}</div>
-                  </div>
-                )}
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Models</div>
+              <ModelSetEditor
+                models={(localConfig.models as ModelEntry[]) || []}
+                onChange={models => setLocalConfig(c => ({ ...c, models }))}
+                nodeId={active.nodeId}
+                onOpenSubEditor={(i, m) => { onSave(active.nodeId, { ...localConfig }, localLabel); onOpenModelEditor(active.nodeId, i, m); onClose(); }}
               />
             </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Version (blank = latest active)</Text>
-              <Input value={(localConfig.version as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, version: e.target.value }))}
-                placeholder="e.g. 1.0" style={{ marginTop: 4 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Result Key</Text>
-              <Input value={(localConfig.resultKey as string) || ''} onChange={e => setLocalConfig(c => ({ ...c, resultKey: e.target.value }))}
-                placeholder={(localConfig.policyId as string) || 'defaults to policyId'} style={{ marginTop: 4 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>Expected Outcomes</Text>
-              <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {localOutcomes.map(o => (
-                  <Tag key={o} closable onClose={() => setLocalOutcomes(localOutcomes.filter(x => x !== o))} color="blue">{o}</Tag>
-                ))}
-              </div>
-              <Space style={{ marginTop: 8 }}>
-                <Input size="small" value={newOutcome} onChange={e => setNewOutcome(e.target.value.toUpperCase())}
-                  placeholder="Add outcome" style={{ width: 140 }}
-                  onPressEnter={() => { if (newOutcome) { setLocalOutcomes([...localOutcomes, newOutcome]); setNewOutcome(''); } }} />
-                <Button size="small" onClick={() => { if (newOutcome) { setLocalOutcomes([...localOutcomes, newOutcome]); setNewOutcome(''); } }}>Add</Button>
-              </Space>
-            </div>
-          </Space>
-        )}
+          )}
 
-        {active.nodeType === 'MODEL' && (
-          <ModelSetEditor
-            models={(localConfig.models as ModelEntry[]) || []}
-            onChange={models => setLocalConfig(c => ({ ...c, models }))}
-            nodeId={active.nodeId}
-            onOpenSubEditor={(i, m) => { onSave(active.nodeId, { ...localConfig }, localLabel); onOpenModelEditor(active.nodeId, i, m); onClose(); }}
-          />
-        )}
+          {active.nodeType === 'OUTCOME' && (
+            <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              <InlineOutcomeEditor
+                config={localConfig as unknown as OutcomeNodeConfig}
+                onChange={cfg => setLocalConfig(cfg as unknown as Record<string, unknown>)}
+              />
+            </div>
+          )}
 
-        {active.nodeType === 'OUTCOME' && (
-          <InlineOutcomeEditor
-            config={localConfig as unknown as OutcomeNodeConfig}
-            onChange={cfg => setLocalConfig(cfg as unknown as Record<string, unknown>)}
-          />
-        )}
-
-        {active.nodeType === 'CUSTOM_OUTPUT' && (
-          <InlineCustomOutputEditor
-            template={(localConfig.template as string) || ''}
-            onChange={template => setLocalConfig(c => ({ ...c, template }))}
-          />
-        )}
+          {active.nodeType === 'CUSTOM_OUTPUT' && (
+            <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              <InlineCustomOutputEditor
+                template={(localConfig.template as string) || ''}
+                onChange={template => setLocalConfig(c => ({ ...c, template }))}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Panel footer */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, background: '#fff' }}>
-        <Button onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
-        <Button type="primary" onClick={handleSave} style={{ flex: 2, background: hc.accent, borderColor: hc.accent }}>Save</Button>
+      <div style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', background: '#fff', boxShadow: '0 -2px 8px rgba(0,0,0,0.04)' }}>
+        {active.nodeType !== 'START' && onDelete && (
+          <button
+            onClick={() => Modal.confirm({
+              title: `Delete "${active.label}"?`,
+              content: 'This will also remove all edges connected to this node. This action cannot be undone.',
+              okText: 'Delete Node',
+              okButtonProps: { danger: true },
+              cancelText: 'Cancel',
+              onOk: () => { onDelete(active.nodeId); onClose(); },
+            })}
+            style={{
+              width: '100%', marginBottom: 8,
+              background: 'none', border: '1px solid #fca5a5',
+              borderRadius: 8, height: 32,
+              color: '#ef4444', fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.borderColor = '#f87171'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = '#fca5a5'; }}
+          >
+            <DeleteOutlined style={{ fontSize: 11 }} /> Delete Node
+          </button>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button onClick={onClose} style={{ flex: 1, borderRadius: 8, height: 36 }}>Cancel</Button>
+          <Button type="primary" onClick={handleSave} style={{ flex: 2, background: hc.accent, borderColor: hc.accent, borderRadius: 8, height: 36, fontWeight: 600 }}>Save Changes</Button>
+        </div>
       </div>
     </Drawer>
   );
@@ -1788,6 +1926,26 @@ function PolicyEditorContent() {
     return raw.length > 1 ? getAutoLayout(raw, rawEdges) : raw;
   });
   const [edges, setEdges] = useState<Edge[]>(incomingState?.edges || []);
+
+  // ── Refs that always hold the latest nodes/edges (avoid stale closures) ──────
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  // ── Undo / redo history ───────────────────────────────────────────────────────
+  const historyStack = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
+  const historyPointer = useRef(-1);
+  const skipHistory = useRef(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  // Initialize history with starting state on mount
+  useEffect(() => {
+    historyStack.current = [{ nodes: nodesRef.current, edges: edgesRef.current }];
+    historyPointer.current = 0;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [saving, setSaving] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
 
@@ -1797,6 +1955,43 @@ function PolicyEditorContent() {
   // Quick-add state
   const connectingHandle = useRef<{ nodeId: string; handleId: string | null } | null>(null);
   const [quickAdd, setQuickAdd] = useState<{ screenPos: { x: number; y: number }; flowPos: { x: number; y: number } } | null>(null);
+
+  // ── History helpers ──────────────────────────────────────────────────────────
+
+  const pushHistory = useCallback((newNodes: Node[], newEdges: Edge[]) => {
+    if (skipHistory.current) return;
+    // Truncate any forward (redo) history
+    historyStack.current = historyStack.current.slice(0, historyPointer.current + 1);
+    historyStack.current.push({ nodes: newNodes, edges: newEdges });
+    if (historyStack.current.length > 60) historyStack.current.shift();
+    else historyPointer.current++;
+    setCanUndo(historyPointer.current > 0);
+    setCanRedo(false);
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyPointer.current <= 0) return;
+    historyPointer.current--;
+    const snap = historyStack.current[historyPointer.current];
+    skipHistory.current = true;
+    setNodes(snap.nodes);
+    setEdges(snap.edges);
+    skipHistory.current = false;
+    setCanUndo(historyPointer.current > 0);
+    setCanRedo(true);
+  }, [setNodes, setEdges]);
+
+  const redo = useCallback(() => {
+    if (historyPointer.current >= historyStack.current.length - 1) return;
+    historyPointer.current++;
+    const snap = historyStack.current[historyPointer.current];
+    skipHistory.current = true;
+    setNodes(snap.nodes);
+    setEdges(snap.edges);
+    skipHistory.current = false;
+    setCanUndo(true);
+    setCanRedo(historyPointer.current < historyStack.current.length - 1);
+  }, [setNodes, setEdges]);
 
   // ── Callbacks ───────────────────────────────────────────────────────────────
 
@@ -1817,10 +2012,16 @@ function PolicyEditorContent() {
   }, []);
 
   const handleEditSave = useCallback((nodeId: string, config: Record<string, unknown>, label?: string, workflowOutcomes?: string[]) => {
-    onConfigChange(nodeId, config);
-    if (label) onLabelChange(nodeId, label);
-    if (workflowOutcomes) onWorkflowOutcomesChange(nodeId, workflowOutcomes);
-  }, [onConfigChange, onLabelChange, onWorkflowOutcomesChange]);
+    const newNodes = nodesRef.current.map(n => {
+      if (n.id !== nodeId) return n;
+      const newData = { ...n.data, config };
+      if (label !== undefined) newData.label = label;
+      if (workflowOutcomes !== undefined) newData.workflowOutcomes = workflowOutcomes;
+      return { ...n, data: newData };
+    });
+    pushHistory(newNodes, edgesRef.current);
+    setNodes(newNodes);
+  }, [pushHistory]);
 
   const onOpenModelEditor = useCallback((nodeId: string, modelIndex: number, model: ModelEntry) => {
     const route = model.type === 'SCORECARD' ? '/editor/scorecard' : '/editor/decision-table';
@@ -1836,7 +2037,7 @@ function PolicyEditorContent() {
   // Attach context callbacks to all nodes
   const nodesWithCallbacks = nodes.map(n => ({
     ...n,
-    data: { ...n.data, onConfigChange, onWorkflowOutcomesChange },
+    data: { ...n.data, onConfigChange, onLabelChange, onWorkflowOutcomesChange },
   }));
 
   // ── Flow event handlers ─────────────────────────────────────────────────────
@@ -1844,12 +2045,15 @@ function PolicyEditorContent() {
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), []);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), []);
 
-  const onConnect = useCallback((connection: Connection) =>
-    setEdges(eds => addEdge({
+  const onConnect = useCallback((connection: Connection) => {
+    const newEdges = addEdge({
       ...connection, id: `e_${uid()}`,
       type: 'default',
       ...edgeProps(connection.sourceHandle),
-    }, eds)), []);
+    }, edgesRef.current);
+    pushHistory(nodesRef.current, newEdges);
+    setEdges(newEdges);
+  }, [pushHistory]);
 
   const onConnectStart = useCallback((_: React.MouseEvent | React.TouchEvent, params: { nodeId: string | null; handleId: string | null }) => {
     connectingHandle.current = { nodeId: params.nodeId || '', handleId: params.handleId };
@@ -1874,10 +2078,13 @@ function PolicyEditorContent() {
       type: 'default',
       ...edgeProps(connectingHandle.current.handleId),
     };
-    setNodes(nds => [...nds, newNode]);
-    setEdges(eds => [...eds, newEdge]);
+    const newNodes = [...nodesRef.current, newNode];
+    const newEdges = [...edgesRef.current, newEdge];
+    pushHistory(newNodes, newEdges);
+    setNodes(newNodes);
+    setEdges(newEdges);
     connectingHandle.current = null;
-  }, [quickAdd]);
+  }, [quickAdd, pushHistory]);
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }, []);
 
@@ -1887,21 +2094,30 @@ function PolicyEditorContent() {
     if (!typeData) return;
     const { nodeType, extra } = JSON.parse(typeData) as { nodeType: string; extra?: Record<string, unknown> };
     const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    setNodes(nds => [...nds, makeNode(nodeType, position, extra)]);
-  }, [screenToFlowPosition]);
+    const newNode = makeNode(nodeType, position, extra);
+    const newNodes = [...nodesRef.current, newNode];
+    pushHistory(newNodes, edgesRef.current);
+    setNodes(newNodes);
+  }, [screenToFlowPosition, pushHistory]);
 
   const deleteSelected = useCallback(() => {
-    setNodes(nds => {
-      const deletedIds = new Set(
-        nds.filter(n => n.selected && n.type !== 'START').map(n => n.id)
-      );
-      // Remove selected edges AND any edge whose source/target was just deleted
-      setEdges(eds => eds.filter(
-        e => !e.selected && !deletedIds.has(e.source) && !deletedIds.has(e.target)
-      ));
-      return nds.filter(n => !n.selected || n.type === 'START');
-    });
-  }, []);
+    const cur = nodesRef.current;
+    const curEdges = edgesRef.current;
+    const deletedIds = new Set(cur.filter(n => n.selected && n.type !== 'START').map(n => n.id));
+    const newNodes = cur.filter(n => !n.selected || n.type === 'START');
+    const newEdges = curEdges.filter(e => !e.selected && !deletedIds.has(e.source) && !deletedIds.has(e.target));
+    pushHistory(newNodes, newEdges);
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [pushHistory]);
+
+  const deleteNodeById = useCallback((nodeId: string) => {
+    const newNodes = nodesRef.current.filter(n => n.id !== nodeId);
+    const newEdges = edgesRef.current.filter(e => e.source !== nodeId && e.target !== nodeId);
+    pushHistory(newNodes, newEdges);
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [pushHistory]);
 
   const confirmDelete = useCallback(() => {
     const selectedNodes = nodes.filter(n => n.selected && n.type !== 'START');
@@ -1929,18 +2145,31 @@ function PolicyEditorContent() {
     });
   }, [nodes, edges, deleteSelected]);
 
-  // Keyboard delete — Delete or Backspace triggers confirmation
+  // Keyboard delete — Delete or Backspace triggers confirmation; Cmd/Ctrl+Z/Y for undo/redo
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      // Ignore if focus is inside an input / textarea / contenteditable
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'z') {
+        if (isEditing) return;
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        if (isEditing) return;
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (isEditing) return;
       confirmDelete();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [confirmDelete]);
+  }, [confirmDelete, undo, redo]);
 
   // ── Save ────────────────────────────────────────────────────────────────────
 
@@ -2055,6 +2284,18 @@ function PolicyEditorContent() {
 
         {/* Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Tooltip title="Undo (⌘Z)">
+            <Button
+              size="small" icon={<UndoOutlined />} onClick={undo} disabled={!canUndo}
+              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
+            />
+          </Tooltip>
+          <Tooltip title="Redo (⌘⇧Z)">
+            <Button
+              size="small" icon={<RedoOutlined />} onClick={redo} disabled={!canRedo}
+              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
+            />
+          </Tooltip>
           <Tooltip title="Delete selected  (Del)">
             <Button
               size="small" icon={<DeleteOutlined />} onClick={confirmDelete}
@@ -2193,6 +2434,7 @@ function PolicyEditorContent() {
             onConnectEnd={onConnectEnd}
             onDragOver={onDragOver}
             onDrop={onDrop}
+            onNodeDragStop={() => setTimeout(() => pushHistory(nodesRef.current, edgesRef.current), 0)}
             nodeTypes={NODE_TYPES}
             fitView
             deleteKeyCode={null}
@@ -2232,6 +2474,7 @@ function PolicyEditorContent() {
         onClose={() => setActiveEdit(null)}
         onSave={handleEditSave}
         onOpenModelEditor={onOpenModelEditor}
+        onDelete={deleteNodeById}
       />
 
       {/* ── Quick-add menu ────────────────────────────────────────────── */}
