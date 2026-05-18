@@ -88,7 +88,6 @@ export interface GraphRule {
   expression: string;
   cantDecideExpression?: string;
   priority: number;
-  onMissing?: OnMissing;
 }
 
 export interface RuleNodeConfig {

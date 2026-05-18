@@ -18,8 +18,8 @@ import {
 import {
   PlusOutlined, DeleteOutlined, PlayCircleOutlined,
   CheckCircleOutlined, CloseCircleOutlined, QuestionCircleOutlined,
-  ApartmentOutlined, ThunderboltOutlined, ForkOutlined,
-  DatabaseOutlined, ApiOutlined, SaveOutlined, ArrowLeftOutlined,
+  ApartmentOutlined, ThunderboltOutlined, ThunderboltFilled, ForkOutlined,
+  DatabaseOutlined, ApiOutlined, SaveOutlined,
   CalculatorOutlined, TableOutlined, FunctionOutlined,
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
   DownloadOutlined,
@@ -69,7 +69,6 @@ const PALETTE_OUTCOMES = [
   { type: 'OUTCOME', label: 'Approved',     outcome: 'APPROVED',    color: '#16a34a', bg: '#f0fdf4', icon: <CheckCircleOutlined /> },
   { type: 'OUTCOME', label: 'Rejected',     outcome: 'REJECTED',    color: '#dc2626', bg: '#fef2f2', icon: <CloseCircleOutlined /> },
   { type: 'OUTCOME', label: "Can't Decide", outcome: 'CANT_DECIDE', color: '#d97706', bg: '#fffbeb', icon: <QuestionCircleOutlined /> },
-  { type: 'OUTCOME', label: 'Custom',       outcome: '',            color: '#6b7280', bg: '#f9fafb', icon: <ApartmentOutlined /> },
 ];
 
 // ── Edge helpers ──────────────────────────────────────────────────────────────
@@ -296,6 +295,7 @@ function NodeCard({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
+        position: 'relative',
         background: '#fff',
         border: `1px solid ${hover ? theme.accent + '55' : '#e5e7eb'}`,
         borderRadius: 10,
@@ -342,18 +342,32 @@ function NodeCard({
       {/* ── Body ────────────────────────────────────────────── */}
       {children}
 
-      {/* ── Output handle rows ──────────────────────────────── */}
+      {/* ── Output handles — vertically centred column on right edge ── */}
       {outputHandles && outputHandles.length > 0 && (
-        <div style={{ borderTop: '1px solid #f3f4f6' }}>
-          {outputHandles.map((h, i) => (
-            <div key={h.id} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '5px 12px',
-              borderTop: i > 0 ? '1px solid #f9fafb' : undefined,
-            }}>
-              <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{h.label}</span>
-              <Handle type="source" position={Position.Right} id={h.id} style={outputHandle(h.color)} />
-            </div>
+        <div style={{
+          position: 'absolute',
+          right: -6,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          {outputHandles.map((h) => (
+            <Tooltip key={h.id} title={h.label} placement="right" mouseEnterDelay={0}>
+              <Handle
+                type="source" position={Position.Right} id={h.id}
+                style={{
+                  position: 'relative',
+                  top: 'auto', right: 'auto', transform: 'none',
+                  background: '#fff',
+                  width: 10, height: 10,
+                  border: `2px solid ${h.color}`,
+                  boxShadow: `0 0 0 3px ${h.color}22`,
+                }}
+              />
+            </Tooltip>
           ))}
         </div>
       )}
@@ -433,11 +447,11 @@ function RuleNode({ id, data }: NodeProps) {
             No rules — click ··· to configure
           </div>
         ) : (
-          rules.slice(0, 4).map((r, i) => (
+          rules.map((r, i) => (
             <div key={i} style={{
               display: 'flex', alignItems: 'flex-start',
               padding: '7px 12px 7px 6px',
-              borderBottom: i < Math.min(rules.length, 4) - 1 ? '1px solid #f9fafb' : undefined,
+              borderBottom: i < rules.length - 1 ? '1px solid #f9fafb' : undefined,
             }}>
               {/* Drag handle */}
               <span style={{ color: '#d1d5db', fontSize: 13, cursor: 'grab', padding: '1px 4px 0', flexShrink: 0, lineHeight: 1.3, letterSpacing: -2 }}>⠿</span>
@@ -460,9 +474,6 @@ function RuleNode({ id, data }: NodeProps) {
               </div>
             </div>
           ))
-        )}
-        {rules.length > 4 && (
-          <div style={{ padding: '4px 12px', fontSize: 11, color: '#9ca3af' }}>+{rules.length - 4} more rules</div>
         )}
       </div>
 
@@ -947,14 +958,14 @@ function ModelNode({ id, data }: NodeProps) {
             No models — click ··· to configure
           </div>
         ) : (
-          models.slice(0, 3).map((m, i) => {
+          models.map((m, i) => {
             const meta = MODEL_TYPE_META[m.type as ModelType] || MODEL_TYPE_META.EXPRESSION;
             const hasDefinition = m.type === 'EXPRESSION' ? !!m.expression : !!m.inlineDefinition;
             return (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '7px 12px 7px 12px',
-                borderBottom: i < Math.min(models.length, 3) - 1 ? '1px solid #f9fafb' : undefined,
+                borderBottom: i < models.length - 1 ? '1px solid #f9fafb' : undefined,
               }}>
                 <span style={{ color: '#d1d5db', fontSize: 13, letterSpacing: -2, flexShrink: 0 }}>⠿</span>
                 <div style={{ width: 24, height: 24, borderRadius: 6, background: meta.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: meta.color, fontSize: 12, flexShrink: 0 }}>
@@ -977,7 +988,6 @@ function ModelNode({ id, data }: NodeProps) {
             );
           })
         )}
-        {models.length > 3 && <div style={{ padding: '4px 12px', fontSize: 11, color: '#9ca3af' }}>+{models.length - 3} more</div>}
       </div>
 
       {/* Add Model */}
@@ -1077,7 +1087,7 @@ function rfNodesToPolicy(nodes: Node[], edges: Edge[]): { policyNodes: PolicyNod
 // ── Inline editors ────────────────────────────────────────────────────────────
 
 function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (r: GraphRule[]) => void }) {
-  const add = () => onChange([...rules, { name: `rule_${rules.length + 1}`, expression: '', priority: rules.length + 1, onMissing: 'FAIL' }]);
+  const add = () => onChange([...rules, { name: `rule_${rules.length + 1}`, expression: '', priority: rules.length + 1 }]);
   const update = (i: number, field: keyof GraphRule, val: string | number) => {
     const copy = [...rules]; (copy[i] as unknown as Record<string, unknown>)[field] = val; onChange(copy);
   };
@@ -1108,12 +1118,6 @@ function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (
                 onChange={e => update(i, 'cantDecideExpression', e.target.value)}
                 placeholder="e.g. bureau.score == nil"
                 style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12 }} />
-            </div>
-            <div>
-              <Text type="secondary" style={{ fontSize: 11 }}>On Missing</Text>
-              <Select size="small" value={r.onMissing || 'FAIL'} onChange={v => update(i, 'onMissing', v)}
-                style={{ marginTop: 4, width: '100%' }}
-                options={[{ value: 'FAIL', label: 'Fail' }, { value: 'PASS', label: 'Pass' }, { value: 'SKIP', label: 'Skip' }]} />
             </div>
           </Space>
         </div>
@@ -1464,13 +1468,38 @@ function PaletteGridItem({ nodeType, label, icon, color, bg, extra }: {
     e.dataTransfer.effectAllowed = 'move';
   };
   return (
-    <div draggable onDragStart={onDragStart}
+    <div
+      draggable onDragStart={onDragStart}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '10px 6px', borderRadius: 10, cursor: 'grab', userSelect: 'none', transition: 'all 0.15s', background: hover ? bg : 'transparent', border: hover ? `1px solid ${color}30` : '1px solid transparent' }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: bg, border: `1px solid ${color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, fontSize: 18, boxShadow: hover ? `0 4px 12px ${color}25` : 'none', transition: 'all 0.15s' }}>
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        padding: '14px 8px 12px',
+        borderRadius: 12, cursor: 'grab', userSelect: 'none',
+        background: hover ? '#fff' : '#fff',
+        border: `1.5px solid ${hover ? color + '50' : '#edf0f4'}`,
+        boxShadow: hover
+          ? `0 4px 16px ${color}18, 0 1px 4px rgba(0,0,0,0.06)`
+          : '0 1px 3px rgba(0,0,0,0.04)',
+        transition: 'all 0.15s ease',
+        transform: hover ? 'translateY(-1px)' : 'none',
+      }}
+    >
+      <div style={{
+        width: 44, height: 44, borderRadius: 12,
+        background: bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color, fontSize: 20,
+        transition: 'all 0.15s',
+      }}>
         {icon}
       </div>
-      <span style={{ fontSize: 11, color: hover ? color : '#475569', fontWeight: 500, textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
+      <span style={{
+        fontSize: 11.5, fontWeight: 500, textAlign: 'center', lineHeight: 1.2,
+        color: hover ? color : '#374151',
+        transition: 'color 0.15s',
+      }}>
+        {label}
+      </span>
     </div>
   );
 }
@@ -1666,9 +1695,56 @@ function PolicyEditorContent() {
   }, [screenToFlowPosition]);
 
   const deleteSelected = useCallback(() => {
-    setNodes(nds => nds.filter(n => !n.selected || n.type === 'START'));
-    setEdges(eds => eds.filter(e => !e.selected));
+    setNodes(nds => {
+      const deletedIds = new Set(
+        nds.filter(n => n.selected && n.type !== 'START').map(n => n.id)
+      );
+      // Remove selected edges AND any edge whose source/target was just deleted
+      setEdges(eds => eds.filter(
+        e => !e.selected && !deletedIds.has(e.source) && !deletedIds.has(e.target)
+      ));
+      return nds.filter(n => !n.selected || n.type === 'START');
+    });
   }, []);
+
+  const confirmDelete = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected && n.type !== 'START');
+    const selectedEdges = edges.filter(e => e.selected);
+    // Also count edges that would be removed because their node is deleted
+    const deletedNodeIds = new Set(selectedNodes.map(n => n.id));
+    const danglingEdges  = edges.filter(e => !e.selected && (deletedNodeIds.has(e.source) || deletedNodeIds.has(e.target)));
+
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) return;
+
+    const parts: string[] = [];
+    if (selectedNodes.length > 0)
+      parts.push(`${selectedNodes.length} node${selectedNodes.length > 1 ? 's' : ''}`);
+    const totalEdges = selectedEdges.length + danglingEdges.length;
+    if (totalEdges > 0)
+      parts.push(`${totalEdges} edge${totalEdges > 1 ? 's' : ''}`);
+
+    Modal.confirm({
+      title: 'Delete selected elements?',
+      content: `This will permanently remove ${parts.join(' and ')}. This action cannot be undone.`,
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: deleteSelected,
+    });
+  }, [nodes, edges, deleteSelected]);
+
+  // Keyboard delete — Delete or Backspace triggers confirmation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      // Ignore if focus is inside an input / textarea / contenteditable
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      confirmDelete();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [confirmDelete]);
 
   // ── Save ────────────────────────────────────────────────────────────────────
 
@@ -1723,82 +1799,170 @@ function PolicyEditorContent() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
 
       {/* ── Top bar ──────────────────────────────────────────────────── */}
-      <div style={{ height: 52, background: '#0f172a', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, flexShrink: 0, borderBottom: '1px solid #1e293b' }}>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ color: '#64748b' }} />
-        <div style={{ width: 1, height: 20, background: '#1e293b' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-          <Text style={{ color: '#94a3b8', fontSize: 12 }}>Policies</Text>
-          <Text style={{ color: '#334155', fontSize: 12 }}>/</Text>
-          <Text style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{pageTitle}</Text>
-          {meta.version && <Tag style={{ background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', fontSize: 11 }}>v{meta.version}</Tag>}
-          <Tag color={editorMode === 'editDraft' ? 'orange' : 'blue'} style={{ fontSize: 10 }}>
-            {editorMode === 'editDraft' ? 'EDIT DRAFT' : 'DRAFT'}
-          </Tag>
+      <div style={{
+        height: 58, background: '#0f172a', flexShrink: 0,
+        borderBottom: '1px solid #1e293b',
+        display: 'flex', alignItems: 'center', padding: '0 20px', gap: 0,
+      }}>
+        {/* Minerva logo mark — click to go home */}
+        <div
+          onClick={() => navigate('/')}
+          style={{
+            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', marginRight: 16,
+            boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
+            transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+        >
+          <ThunderboltFilled style={{ color: '#fff', fontSize: 14 }} />
         </div>
-        <Tooltip title="Select nodes/edges then click">
-          <Button size="small" danger ghost icon={<DeleteOutlined />} onClick={deleteSelected}
-            style={{ borderColor: '#334155', color: '#f87171' }}>
-            Delete Selected
+
+        <div style={{ width: 1, height: 24, background: '#334155', marginRight: 16, flexShrink: 0 }} />
+
+        {/* Breadcrumb + badges */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0, flex: 1, minWidth: 0 }}>
+          <span style={{ color: '#1e293b', fontSize: 16, marginRight: 10, flexShrink: 0 }}>/</span>
+          <span style={{
+            color: '#f1f5f9', fontWeight: 600, fontSize: 15,
+            letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {pageTitle}
+          </span>
+
+          {meta.version && (
+            <span style={{
+              marginLeft: 12, flexShrink: 0,
+              background: '#1e293b', border: '1px solid #334155',
+              color: '#64748b', fontSize: 11, fontWeight: 600,
+              padding: '2px 9px', borderRadius: 20, letterSpacing: '0.03em',
+            }}>
+              v{meta.version}
+            </span>
+          )}
+
+          <span style={{
+            marginLeft: 8, flexShrink: 0,
+            background: editorMode === 'editDraft' ? 'rgba(217,119,6,0.12)' : 'rgba(59,130,246,0.12)',
+            border: `1px solid ${editorMode === 'editDraft' ? 'rgba(217,119,6,0.5)' : 'rgba(59,130,246,0.5)'}`,
+            color: editorMode === 'editDraft' ? '#f59e0b' : '#60a5fa',
+            fontSize: 10, fontWeight: 700,
+            padding: '2px 9px', borderRadius: 20,
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>
+            {editorMode === 'editDraft' ? 'Draft' : 'New'}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Tooltip title="Delete selected  (Del)">
+            <Button
+              size="small" icon={<DeleteOutlined />} onClick={confirmDelete}
+              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
+            />
+          </Tooltip>
+          <Tooltip title="Download policy JSON">
+            <Button
+              size="small" icon={<DownloadOutlined />} onClick={handleExport}
+              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
+            />
+          </Tooltip>
+          <div style={{ width: 1, height: 22, background: '#334155', margin: '0 4px' }} />
+          <Button
+            icon={<SaveOutlined />} type="primary" loading={saving} onClick={handleSave}
+            style={{ fontWeight: 600, borderRadius: 8, paddingLeft: 18, paddingRight: 18 }}
+          >
+            {editorMode === 'editDraft' ? 'Save Draft' : 'Save Policy'}
           </Button>
-        </Tooltip>
-        <Tooltip title="Download policy as JSON">
-          <Button size="small" ghost icon={<DownloadOutlined />} onClick={handleExport}
-            style={{ borderColor: '#334155', color: '#94a3b8' }} />
-        </Tooltip>
-        <Button icon={<SaveOutlined />} type="primary" loading={saving} onClick={handleSave} style={{ fontWeight: 600 }}>
-          {editorMode === 'editDraft' ? 'Save Draft' : 'Save Policy'}
-        </Button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
 
         {/* ── Left palette ─────────────────────────────────────────── */}
         <div style={{
-          width: paletteOpen ? 200 : 0,
-          background: '#fff',
-          borderRight: paletteOpen ? '1px solid #e2e8f0' : 'none',
+          width: paletteOpen ? 220 : 0,
+          background: '#f8f9fb',
+          borderRight: paletteOpen ? '1px solid #e8ecf0' : 'none',
           display: 'flex', flexDirection: 'column', flexShrink: 0,
           overflow: 'hidden',
           transition: 'width 0.2s ease',
         }}>
-          <div style={{ padding: '10px 10px 10px 14px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8, width: 200, boxSizing: 'border-box' }}>
-            <Text style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.8, flex: 1 }}>Add Block</Text>
+          {/* Header */}
+          <div style={{
+            padding: '14px 12px 13px 16px',
+            borderBottom: '1px solid #e8ecf0',
+            display: 'flex', alignItems: 'center', gap: 8,
+            width: 220, boxSizing: 'border-box',
+            background: '#fff',
+          }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              flexShrink: 0,
+            }} />
+            <span style={{
+              flex: 1, fontSize: 12, fontWeight: 600, color: '#111827',
+              letterSpacing: '-0.01em',
+            }}>
+              Add Block
+            </span>
             <button
               onClick={() => setPaletteOpen(false)}
               title="Hide panel"
               style={{
-                background: '#e2e8f0', border: 'none', cursor: 'pointer',
-                color: '#475569', fontSize: 11, fontWeight: 700,
-                width: 22, height: 22, borderRadius: 5, flexShrink: 0,
+                background: 'none', border: '1px solid #e5e7eb', cursor: 'pointer',
+                color: '#9ca3af', fontSize: 11, fontWeight: 700,
+                width: 22, height: 22, borderRadius: 6, flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
               }}
             >
               ✕
             </button>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px', minWidth: 200 }}>
-            <Text style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6, display: 'block', marginBottom: 4, paddingLeft: 4 }}>Blocks</Text>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+          {/* Scrollable content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 10px 12px', minWidth: 220 }}>
+            {/* Blocks section */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingLeft: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Blocks</span>
+              <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, #e0e7ff, transparent)' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {PALETTE_BLOCKS.map(b => (
                 <PaletteGridItem key={b.type} nodeType={b.type} label={b.label} icon={b.icon} color={b.color} bg={b.bg} />
               ))}
             </div>
 
-            <Divider style={{ margin: '10px 0' }} />
-
-            <Text style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6, display: 'block', marginBottom: 4, paddingLeft: 4 }}>Outcomes</Text>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+            {/* Outcomes section */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 10px', paddingLeft: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Outcomes</span>
+              <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, #e0f2fe, transparent)' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {PALETTE_OUTCOMES.map(o => (
                 <PaletteGridItem key={o.label} nodeType={o.type} label={o.label} icon={o.icon} color={o.color} bg={o.bg} extra={{ outcome: o.outcome || '' }} />
               ))}
             </div>
           </div>
 
-          <div style={{ padding: '10px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc', minWidth: 200 }}>
-            <Text style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.5, display: 'block' }}>
-              Drag to canvas or drop a handle on empty space to connect.
-            </Text>
+          {/* Footer hint */}
+          <div style={{
+            padding: '10px 14px',
+            borderTop: '1px solid #e8ecf0',
+            background: '#fff',
+            minWidth: 220,
+            display: 'flex', alignItems: 'flex-start', gap: 7,
+          }}>
+            <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>⌗</span>
+            <span style={{ fontSize: 10.5, color: '#9ca3af', lineHeight: 1.55 }}>
+              Drag onto canvas, or drop on an empty handle to connect directly.
+            </span>
           </div>
         </div>
 
@@ -1811,9 +1975,9 @@ function PolicyEditorContent() {
               position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
               zIndex: 10, writingMode: 'vertical-rl', textOrientation: 'mixed',
               background: '#fff', border: '1px solid #e2e8f0', borderLeft: 'none',
-              borderRadius: '0 6px 6px 0', padding: '12px 6px',
-              fontSize: 11, fontWeight: 600, color: '#64748b',
-              cursor: 'pointer', letterSpacing: 0.5,
+              borderRadius: '0 6px 6px 0', padding: '12px 7px',
+              fontSize: 10.5, fontWeight: 600, color: '#6366f1',
+              cursor: 'pointer', letterSpacing: 0.8,
               boxShadow: '2px 0 8px rgba(0,0,0,0.06)',
             }}
           >
