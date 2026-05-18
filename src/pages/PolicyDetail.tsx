@@ -13,6 +13,7 @@ import {
   fetchVersions, updateStatus, evaluate,
   fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition, deletePolicy,
 } from '../api/client';
+import { UserBadge } from '../components/UserBadge';
 import type {
   PolicySummary, PolicyStatus, EvaluationLogSummary,
   EvaluationLogDetail, EvaluationResult, RuleResult,
@@ -149,7 +150,7 @@ function VersionsTab({ policyId }: { policyId: string }) {
     {
       title: 'Created By',
       dataIndex: 'createdBy',
-      render: (v?: string) => <Text type="secondary">{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
     },
     {
       title: 'Created At',

@@ -1881,10 +1881,7 @@ function PolicyMetaModal({ open, initial, locked, onOk, onCancel }: {
           <Text type="secondary" style={{ fontSize: 12 }}>Description</Text>
           <Input value={meta.description} onChange={set('description')} placeholder="Optional" style={{ marginTop: 4 }} />
         </div>
-        <div>
-          <Text type="secondary" style={{ fontSize: 12 }}>Created By</Text>
-          <Input value={meta.createdBy} onChange={set('createdBy')} placeholder="Optional" style={{ marginTop: 4 }} />
-        </div>
+
       </Space>
     </Modal>
   );

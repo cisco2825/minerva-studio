@@ -9,6 +9,7 @@ import {
 import { Popconfirm, message } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import { fetchPoliciesPage, fetchPolicyStats, deletePolicy, createPolicy } from '../api/client';
+import { UserBadge } from '../components/UserBadge';
 import type { PolicySummary, PolicyStatus, PolicyStats, SavePolicyRequest } from '../types';
 
 const { Title, Text } = Typography;
@@ -255,7 +256,7 @@ export default function PolicyList() {
       title: 'Created By',
       dataIndex: 'createdBy',
       key: 'createdBy',
-      render: (v?: string) => <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
     },
     {
       key: 'actions',

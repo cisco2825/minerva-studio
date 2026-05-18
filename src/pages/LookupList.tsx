@@ -10,6 +10,7 @@ import {
   DeleteOutlined, InboxOutlined, InfoCircleOutlined, DownloadOutlined,
   CopyOutlined, HistoryOutlined,
 } from '@ant-design/icons';
+import { UserBadge } from '../components/UserBadge';
 import {
   fetchLookupsPage, fetchLookupVersions, uploadLookupFile,
   saveLookup, deleteLookup, downloadLookupFile,
@@ -122,7 +123,7 @@ function LookupDetailDrawer({
     {
       title: 'Created By',
       dataIndex: 'createdBy',
-      render: (v?: string) => <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
     },
     {
       key: 'dl',
@@ -225,19 +226,7 @@ function LookupDetailDrawer({
                     </Button>
                   </InfoRow>
                   <InfoRow label="Created by">
-                    {lookup.createdBy ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{
-                          width: 24, height: 24, borderRadius: '50%',
-                          background: '#4f46e5', color: '#fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 10, fontWeight: 700, flexShrink: 0,
-                        }}>
-                          {lookup.createdBy.slice(0, 2).toUpperCase()}
-                        </div>
-                        <Text style={{ fontSize: 13 }}>{lookup.createdBy}</Text>
-                      </div>
-                    ) : '—'}
+                    <UserBadge name={lookup.createdBy} />
                   </InfoRow>
                   <InfoRow label="Created on">
                     <Text style={{ fontSize: 13 }}>{formatDate(lookup.createdAt)}</Text>
@@ -611,7 +600,7 @@ export default function LookupList() {
       title: 'Created By',
       dataIndex: 'createdBy',
       key: 'createdBy',
-      render: (v?: string) => <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
     },
     {
       key: 'actions',
