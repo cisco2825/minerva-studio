@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect, createContext, useContext } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useBlocker } from 'react-router-dom';
 import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap,
   addEdge, applyEdgeChanges, applyNodeChanges,
@@ -1933,15 +1933,50 @@ function PolicyEditorContent() {
   // ── Undo / redo history ───────────────────────────────────────────────────────
   const historyStack = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
   const historyPointer = useRef(-1);
+  const savedPointer   = useRef(0);   // pointer value at last successful save / initial load
   const skipHistory = useRef(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   // Initialize history with starting state on mount
   useEffect(() => {
     historyStack.current = [{ nodes: nodesRef.current, edges: edgesRef.current }];
     historyPointer.current = 0;
+    savedPointer.current   = 0;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Unsaved-changes guard ─────────────────────────────────────────────────────
+
+  // Block in-app navigation (sidebar links, back button, programmatic navigate)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    Modal.confirm({
+      title: 'Unsaved changes',
+      content: 'You have unsaved changes that will be lost if you leave. Save the policy first, or discard your changes.',
+      okText: 'Leave anyway',
+      cancelText: 'Stay & save',
+      okButtonProps: { danger: true },
+      onOk:    () => blocker.proceed(),
+      onCancel: () => blocker.reset(),
+    });
+  }, [blocker.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Block browser refresh / tab close
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const [saving, setSaving] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
@@ -1957,13 +1992,13 @@ function PolicyEditorContent() {
 
   const pushHistory = useCallback((newNodes: Node[], newEdges: Edge[]) => {
     if (skipHistory.current) return;
-    // Truncate any forward (redo) history
     historyStack.current = historyStack.current.slice(0, historyPointer.current + 1);
     historyStack.current.push({ nodes: newNodes, edges: newEdges });
     if (historyStack.current.length > 60) historyStack.current.shift();
     else historyPointer.current++;
     setCanUndo(historyPointer.current > 0);
     setCanRedo(false);
+    setIsDirty(historyPointer.current !== savedPointer.current);
   }, []);
 
   const undo = useCallback(() => {
@@ -1976,6 +2011,7 @@ function PolicyEditorContent() {
     skipHistory.current = false;
     setCanUndo(historyPointer.current > 0);
     setCanRedo(true);
+    setIsDirty(historyPointer.current !== savedPointer.current);
   }, [setNodes, setEdges]);
 
   const redo = useCallback(() => {
@@ -1988,6 +2024,7 @@ function PolicyEditorContent() {
     skipHistory.current = false;
     setCanUndo(true);
     setCanRedo(historyPointer.current < historyStack.current.length - 1);
+    setIsDirty(historyPointer.current !== savedPointer.current);
   }, [setNodes, setEdges]);
 
   // ── Callbacks ───────────────────────────────────────────────────────────────
@@ -2205,6 +2242,9 @@ function PolicyEditorContent() {
         await createPolicy(req);
         message.success('Policy created');
       }
+      // Mark as clean so the navigation blocker doesn't fire after save
+      savedPointer.current = historyPointer.current;
+      setIsDirty(false);
       navigate('/');
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : 'Save failed');

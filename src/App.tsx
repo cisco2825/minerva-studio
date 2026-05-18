@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/AppLayout';
@@ -13,13 +13,10 @@ import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
-// ── Route guard ───────────────────────────────────────────────────────────────
-// While the stored token is being verified, show a centered spinner.
-// Once resolved, either render children or redirect to /login.
+// ── Route guards ──────────────────────────────────────────────────────────────
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-
   if (loading) {
     return (
       <div style={{
@@ -31,11 +28,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
-
-// ── Guest-only guard (redirect to / if already logged in) ─────────────────────
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -43,42 +37,39 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
   return user ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
-// ── App routes ────────────────────────────────────────────────────────────────
+// ── Router (data router — required for useBlocker) ────────────────────────────
 
-function AppRoutes() {
-  return (
-    <Routes>
-      {/* Auth pages — no sidebar, redirect away if already logged in */}
-      <Route path="/login"           element={<GuestRoute><LoginPage /></GuestRoute>} />
-      <Route path="/signup"          element={<GuestRoute><SignupPage /></GuestRoute>} />
-      <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
-      {/* Reset password carries a token param — always public */}
-      <Route path="/reset-password"  element={<ResetPasswordPage />} />
+const router = createBrowserRouter([
+  // Auth pages — redirect away if already logged in
+  { path: '/login',           element: <GuestRoute><LoginPage /></GuestRoute> },
+  { path: '/signup',          element: <GuestRoute><SignupPage /></GuestRoute> },
+  { path: '/forgot-password', element: <GuestRoute><ForgotPasswordPage /></GuestRoute> },
+  // Reset password carries a token param — always public
+  { path: '/reset-password',  element: <ResetPasswordPage /> },
 
-      {/* Pages inside the sidebar shell — require auth */}
-      <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-        <Route path="/" element={<PolicyList />} />
-        <Route path="/policies/:policyId" element={<PolicyDetail />} />
-        <Route path="/lookups" element={<LookupList />} />
-      </Route>
+  // Pages inside the sidebar shell — require auth
+  {
+    element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
+    children: [
+      { path: '/',                   element: <PolicyList /> },
+      { path: '/policies/:policyId', element: <PolicyDetail /> },
+      { path: '/lookups',            element: <LookupList /> },
+    ],
+  },
 
-      {/* Full-screen editors — require auth, no sidebar */}
-      <Route path="/policies/new"          element={<ProtectedRoute><PolicyEditor /></ProtectedRoute>} />
-      <Route path="/editor/decision-table" element={<ProtectedRoute><DecisionTableEditor /></ProtectedRoute>} />
-      <Route path="/editor/scorecard"      element={<ProtectedRoute><ScorecardEditor /></ProtectedRoute>} />
+  // Full-screen editors — require auth, no sidebar
+  { path: '/policies/new',          element: <ProtectedRoute><PolicyEditor /></ProtectedRoute> },
+  { path: '/editor/decision-table', element: <ProtectedRoute><DecisionTableEditor /></ProtectedRoute> },
+  { path: '/editor/scorecard',      element: <ProtectedRoute><ScorecardEditor /></ProtectedRoute> },
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
-}
+  // Fallback
+  { path: '*', element: <Navigate to="/" replace /> },
+]);
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   );
 }
