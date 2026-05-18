@@ -56,7 +56,7 @@ export interface SaveLookupRequest {
 }
 export type EvaluationStatus = 'SUCCESS' | 'ERROR';
 export type TraceLevel = 'MINIMAL' | 'STANDARD' | 'FULL';
-export type NodeType = 'START' | 'RULE' | 'BRANCH' | 'SOURCE' | 'WORKFLOW' | 'MODEL' | 'OUTCOME';
+export type NodeType = 'START' | 'RULE' | 'BRANCH' | 'SOURCE' | 'WORKFLOW' | 'MODEL' | 'OUTCOME' | 'CUSTOM_OUTPUT';
 export type OnMissing = 'FAIL' | 'PASS' | 'SKIP';
 export type DataType = 'NUMBER' | 'TEXT' | 'DATE' | 'BOOLEAN';
 export type HitPolicy = 'FIRST' | 'UNIQUE';
@@ -210,6 +210,11 @@ export interface ModelNodeConfig {
 export interface OutcomeNodeConfig {
   outcome: string;
   outputFields?: Record<string, unknown>;
+  outputExpressions?: Record<string, string>;
+}
+
+export interface CustomOutputNodeConfig {
+  template: string;
 }
 
 // ── Policy storage ────────────────────────────────────────────────────────────
@@ -310,6 +315,7 @@ export interface EvaluationResult {
   skippedRules?: string[];
   notEvaluated?: string[];
   outputFields?: Record<string, unknown>;
+  customOutput?: unknown;
   // scorecard fields
   totalScore?: number;
   maxPossibleScore?: number;

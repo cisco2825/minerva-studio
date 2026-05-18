@@ -29,7 +29,7 @@ import type { LookupSummary, PolicySummary } from '../types';
 import type {
   PolicyNode, PolicyEdge, SavePolicyRequest,
   RuleNodeConfig, BranchNodeConfig, WorkflowNodeConfig,
-  OutcomeNodeConfig, GraphRule, BranchCondition,
+  OutcomeNodeConfig, CustomOutputNodeConfig, GraphRule, BranchCondition,
   ModelNodeConfig, ModelEntry, ModelType,
 } from '../types';
 
@@ -66,9 +66,10 @@ const PALETTE_BLOCKS = [
   { type: 'MODEL',    label: 'Model Set', icon: <CalculatorOutlined />,  color: '#ea580c', bg: '#fff7ed' },
 ];
 const PALETTE_OUTCOMES = [
-  { type: 'OUTCOME', label: 'Approved',     outcome: 'APPROVED',    color: '#16a34a', bg: '#f0fdf4', icon: <CheckCircleOutlined /> },
-  { type: 'OUTCOME', label: 'Rejected',     outcome: 'REJECTED',    color: '#dc2626', bg: '#fef2f2', icon: <CloseCircleOutlined /> },
-  { type: 'OUTCOME', label: "Can't Decide", outcome: 'CANT_DECIDE', color: '#d97706', bg: '#fffbeb', icon: <QuestionCircleOutlined /> },
+  { type: 'OUTCOME',       label: 'Approved',       outcome: 'APPROVED',    color: '#16a34a', bg: '#f0fdf4', icon: <CheckCircleOutlined /> },
+  { type: 'OUTCOME',       label: 'Rejected',       outcome: 'REJECTED',    color: '#dc2626', bg: '#fef2f2', icon: <CloseCircleOutlined /> },
+  { type: 'OUTCOME',       label: "Can't Decide",   outcome: 'CANT_DECIDE', color: '#d97706', bg: '#fffbeb', icon: <QuestionCircleOutlined /> },
+  { type: 'CUSTOM_OUTPUT', label: 'Custom Output',  outcome: '',            color: '#0891b2', bg: '#ecfeff', icon: <FunctionOutlined /> },
 ];
 
 // ── Edge helpers ──────────────────────────────────────────────────────────────
@@ -88,13 +89,14 @@ function edgeProps(sourceHandle: string | null | undefined) {
 // ── Node visual config ────────────────────────────────────────────────────────
 
 const NODE_THEME: Record<string, { accent: string; accentLight: string; icon: React.ReactNode }> = {
-  START:    { accent: '#4f46e5', accentLight: '#eef2ff', icon: <PlayCircleOutlined /> },
-  RULE:     { accent: '#4f46e5', accentLight: '#eef2ff', icon: <ThunderboltOutlined /> },
-  BRANCH:   { accent: '#d97706', accentLight: '#fffbeb', icon: <ForkOutlined /> },
-  SOURCE:   { accent: '#dc2626', accentLight: '#fef2f2', icon: <DatabaseOutlined /> },
-  WORKFLOW: { accent: '#2563eb', accentLight: '#eff6ff', icon: <ApiOutlined /> },
-  MODEL:    { accent: '#ea580c', accentLight: '#fff7ed', icon: <CalculatorOutlined /> },
-  OUTCOME:  { accent: '#16a34a', accentLight: '#f0fdf4', icon: <CheckCircleOutlined /> },
+  START:         { accent: '#4f46e5', accentLight: '#eef2ff', icon: <PlayCircleOutlined /> },
+  RULE:          { accent: '#4f46e5', accentLight: '#eef2ff', icon: <ThunderboltOutlined /> },
+  BRANCH:        { accent: '#d97706', accentLight: '#fffbeb', icon: <ForkOutlined /> },
+  SOURCE:        { accent: '#dc2626', accentLight: '#fef2f2', icon: <DatabaseOutlined /> },
+  WORKFLOW:      { accent: '#2563eb', accentLight: '#eff6ff', icon: <ApiOutlined /> },
+  MODEL:         { accent: '#ea580c', accentLight: '#fff7ed', icon: <CalculatorOutlined /> },
+  OUTCOME:       { accent: '#16a34a', accentLight: '#f0fdf4', icon: <CheckCircleOutlined /> },
+  CUSTOM_OUTPUT: { accent: '#0891b2', accentLight: '#ecfeff', icon: <FunctionOutlined /> },
 };
 
 // ── Shared handle styles ──────────────────────────────────────────────────────
@@ -151,12 +153,13 @@ function estimateNodeHeight(node: Node): number {
   }
   if (type === 'WORKFLOW') return 46 + 30 + 50 + 34 + 30 * 3 + 26;
   if (type === 'START' || type === 'OUTCOME') return 52;
+  if (type === 'CUSTOM_OUTPUT') return 80;
   return 220;
 }
 
 const NODE_LAYOUT_WIDTH: Record<string, number> = {
   START: 180, RULE: 350, BRANCH: 350,
-  SOURCE: 330, MODEL: 330, WORKFLOW: 330, OUTCOME: 180,
+  SOURCE: 330, MODEL: 330, WORKFLOW: 330, OUTCOME: 180, CUSTOM_OUTPUT: 220,
 };
 
 function getAutoLayout(nodes: Node[], edges: Edge[]): Node[] {
@@ -1012,9 +1015,11 @@ const OUTCOME_META: Record<string, { accent: string; accentLight: string; icon: 
   CANT_DECIDE: { accent: '#d97706', accentLight: '#fffbeb', icon: <QuestionCircleOutlined /> },
 };
 
-function OutcomeNode({ data }: NodeProps) {
+function OutcomeNode({ id, data }: NodeProps) {
   const cfg: OutcomeNodeConfig = (data.config as OutcomeNodeConfig) || { outcome: '' };
   const m = OUTCOME_META[cfg.outcome] || { accent: '#6b7280', accentLight: '#f9fafb', icon: <ApartmentOutlined /> };
+  const editCtx = useContext(EditPanelContext);
+  const openEdit = () => editCtx?.openEdit({ nodeId: id, nodeType: 'OUTCOME', label: data.label, config: data.config || {} });
   const label = cfg.outcome || data.label || 'Outcome';
   const compact = useCompact();
   // OutcomeNode compact: reuse its own compact styling (it's already a pill)
@@ -1031,16 +1036,19 @@ function OutcomeNode({ data }: NodeProps) {
     </div>
   );
   return (
-    <div style={{
-      background: '#fff',
-      border: `1px solid ${m.accent}35`,
-      borderRadius: 10,
-      padding: '10px 16px',
-      minWidth: 130,
-      boxShadow: `0 1px 4px ${m.accent}12`,
-      display: 'flex', alignItems: 'center', gap: 8,
-      fontFamily: "'Inter', sans-serif",
-    }}>
+    <div
+      onClick={openEdit}
+      style={{
+        background: '#fff',
+        border: `1px solid ${m.accent}35`,
+        borderRadius: 10,
+        padding: '10px 16px',
+        minWidth: 130,
+        boxShadow: `0 1px 4px ${m.accent}12`,
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontFamily: "'Inter', sans-serif",
+        cursor: 'pointer',
+      }}>
       <Handle type="target" position={Position.Left} id="input"
         style={{ background: '#fff', width: 10, height: 10, border: `2px solid ${m.accent}`, boxShadow: `0 0 0 3px ${m.accentLight}`, left: -6 }} />
       <div style={{
@@ -1056,9 +1064,77 @@ function OutcomeNode({ data }: NodeProps) {
   );
 }
 
+// ── CUSTOM_OUTPUT node ────────────────────────────────────────────────────────
+
+function CustomOutputNode({ id, data }: NodeProps) {
+  const cfg: CustomOutputNodeConfig = (data.config as CustomOutputNodeConfig) || { template: '' };
+  const editCtx = useContext(EditPanelContext);
+  const openEdit = () => editCtx?.openEdit({ nodeId: id, nodeType: 'CUSTOM_OUTPUT', label: data.label, config: data.config || {} });
+  const m = NODE_THEME.CUSTOM_OUTPUT;
+  const label = data.label || 'Custom Output';
+  const preview = cfg.template ? cfg.template.slice(0, 80) + (cfg.template.length > 80 ? '…' : '') : null;
+  const compact = useCompact();
+
+  if (compact) return (
+    <div style={{
+      background: '#fff', border: `1.5px solid ${m.accent}45`, borderRadius: 10,
+      padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 7,
+      minWidth: 140, boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
+    }}>
+      <Handle type="target" position={Position.Left} id="input"
+        style={{ background: '#fff', width: 8, height: 8, border: `2px solid ${m.accent}`, left: -5 }} />
+      <div style={{ width: 22, height: 22, borderRadius: 5, flexShrink: 0, background: m.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', color: m.accent, fontSize: 12 }}>{m.icon}</div>
+      <span style={{ fontWeight: 600, fontSize: 12, color: m.accent }}>{label}</span>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: '#fff',
+      border: `1px solid ${m.accent}35`,
+      borderRadius: 10,
+      padding: '10px 16px 12px',
+      minWidth: 180, maxWidth: 240,
+      boxShadow: `0 1px 4px ${m.accent}12`,
+      fontFamily: "'Inter', sans-serif",
+      cursor: 'pointer',
+    }}
+      onClick={openEdit}
+    >
+      <Handle type="target" position={Position.Left} id="input"
+        style={{ background: '#fff', width: 10, height: 10, border: `2px solid ${m.accent}`, boxShadow: `0 0 0 3px ${m.accentLight}`, left: -6 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: preview ? 8 : 0 }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+          background: m.accentLight,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: m.accent, fontSize: 13,
+        }}>
+          {m.icon}
+        </div>
+        <span style={{ fontWeight: 600, fontSize: 13, color: m.accent, letterSpacing: '-0.02em' }}>{label}</span>
+      </div>
+      {preview && (
+        <div style={{
+          fontSize: 10, color: '#64748b',
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          background: '#f0fdfe', borderRadius: 4, padding: '4px 6px',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          border: `1px solid ${m.accent}20`,
+        }}>
+          {preview}
+        </div>
+      )}
+      {!preview && (
+        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Click to add template</div>
+      )}
+    </div>
+  );
+}
+
 // ── Node type registry ────────────────────────────────────────────────────────
 
-const NODE_TYPES = { START: StartNode, RULE: RuleNode, BRANCH: BranchNode, SOURCE: SourceNode, WORKFLOW: WorkflowNode, MODEL: ModelNode, OUTCOME: OutcomeNode };
+const NODE_TYPES = { START: StartNode, RULE: RuleNode, BRANCH: BranchNode, SOURCE: SourceNode, WORKFLOW: WorkflowNode, MODEL: ModelNode, OUTCOME: OutcomeNode, CUSTOM_OUTPUT: CustomOutputNode };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1067,14 +1143,18 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 function makeNode(type: string, position: { x: number; y: number }, extra?: Record<string, unknown>): Node {
   const id = `${type.toLowerCase()}_${uid()}`;
   const label =
-    type === 'START'    ? 'START' :
-    type === 'RULE'     ? 'Rule Node' :
-    type === 'BRANCH'   ? 'Branch' :
-    type === 'SOURCE'   ? 'Source' :
-    type === 'WORKFLOW' ? 'Workflow' :
-    type === 'MODEL'    ? 'Model Set' :
+    type === 'START'         ? 'START' :
+    type === 'RULE'          ? 'Rule Node' :
+    type === 'BRANCH'        ? 'Branch' :
+    type === 'SOURCE'        ? 'Source' :
+    type === 'WORKFLOW'      ? 'Workflow' :
+    type === 'MODEL'         ? 'Model Set' :
+    type === 'CUSTOM_OUTPUT' ? 'Custom Output' :
     (extra?.outcome as string) || 'Outcome';
-  return { id, type, position, data: { label, config: extra || {} } };
+  const config =
+    type === 'CUSTOM_OUTPUT' ? { template: '' } :
+    extra || {};
+  return { id, type, position, data: { label, config } };
 }
 
 function rfNodesToPolicy(nodes: Node[], edges: Edge[]): { policyNodes: PolicyNode[]; policyEdges: PolicyEdge[] } {
@@ -1219,6 +1299,99 @@ function ModelSetEditor({
   );
 }
 
+function InlineCustomOutputEditor({ template, onChange }: { template: string; onChange: (t: string) => void }) {
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+      <div>
+        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Template</Text>
+        <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, marginBottom: 6, lineHeight: 1.5 }}>
+          JSON-like structure. Quoted values are literals; unquoted values are evaluated as expressions.
+          Use <Text code style={{ fontSize: 10 }}>workflows['policyId version'].outcome</Text> to reference sub-policy results.
+        </div>
+        <Input.TextArea
+          value={template}
+          rows={12}
+          onChange={e => onChange(e.target.value)}
+          placeholder={`[\n  {\n    "bank_name": "AU Small Finance Bank",\n    "decision": IFELSE(workflows['LMP_AU v1.0'].outcome == "approved", "approved", "rejected")\n  }\n]`}
+          style={{ marginTop: 4, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11 }}
+        />
+      </div>
+    </Space>
+  );
+}
+
+function InlineOutcomeEditor({ config, onChange }: {
+  config: OutcomeNodeConfig;
+  onChange: (c: OutcomeNodeConfig) => void;
+}) {
+  const exprs: Record<string, string> = config.outputExpressions || {};
+  const exprEntries = Object.entries(exprs);
+
+  const addExpr = () => {
+    const key = `field_${exprEntries.length + 1}`;
+    onChange({ ...config, outputExpressions: { ...exprs, [key]: '' } });
+  };
+  const updateExprKey = (oldKey: string, newKey: string) => {
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(exprs)) {
+      next[k === oldKey ? newKey : k] = v;
+    }
+    onChange({ ...config, outputExpressions: next });
+  };
+  const updateExprVal = (key: string, val: string) => {
+    onChange({ ...config, outputExpressions: { ...exprs, [key]: val } });
+  };
+  const removeExpr = (key: string) => {
+    const next = { ...exprs };
+    delete next[key];
+    onChange({ ...config, outputExpressions: next });
+  };
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+      <div>
+        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Outcome Value</Text>
+        <Input
+          value={config.outcome || ''}
+          onChange={e => onChange({ ...config, outcome: e.target.value })}
+          placeholder="e.g. APPROVED"
+          style={{ marginTop: 4 }}
+        />
+      </div>
+
+      <div>
+        <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>Output Expressions</Text>
+        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, marginTop: 2, lineHeight: 1.5 }}>
+          Evaluated at runtime against context. Merged with static output fields; expressions win on key conflicts.
+        </div>
+        <Space direction="vertical" style={{ width: '100%' }} size={6}>
+          {exprEntries.map(([key, val]) => (
+            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <Input
+                size="small"
+                value={key}
+                onChange={e => updateExprKey(key, e.target.value)}
+                placeholder="key"
+                style={{ width: 110, flexShrink: 0 }}
+              />
+              <Input
+                size="small"
+                value={val}
+                onChange={e => updateExprVal(key, e.target.value)}
+                placeholder="expression"
+                style={{ flex: 1, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11 }}
+              />
+              <Button type="text" danger size="small" icon={<DeleteOutlined />}
+                onClick={() => removeExpr(key)} style={{ flexShrink: 0 }} />
+            </div>
+          ))}
+          <Button size="small" icon={<PlusOutlined />} onClick={addExpr} block>Add Expression</Button>
+        </Space>
+      </div>
+    </Space>
+  );
+}
+
 // ── Right edit panel (Drawer) ─────────────────────────────────────────────────
 
 interface ActiveEdit extends EditRequest {
@@ -1276,11 +1449,13 @@ function RightEditPanel({
       {/* Panel header */}
       <div style={{ background: hc.accent, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14 }}>
-          {active.nodeType === 'RULE'     ? <ThunderboltOutlined /> :
-           active.nodeType === 'BRANCH'   ? <ForkOutlined /> :
-           active.nodeType === 'SOURCE'   ? <DatabaseOutlined /> :
-           active.nodeType === 'WORKFLOW' ? <ApiOutlined /> :
-           active.nodeType === 'MODEL'    ? <CalculatorOutlined /> :
+          {active.nodeType === 'RULE'          ? <ThunderboltOutlined /> :
+           active.nodeType === 'BRANCH'        ? <ForkOutlined /> :
+           active.nodeType === 'SOURCE'        ? <DatabaseOutlined /> :
+           active.nodeType === 'WORKFLOW'      ? <ApiOutlined /> :
+           active.nodeType === 'MODEL'         ? <CalculatorOutlined /> :
+           active.nodeType === 'OUTCOME'       ? <CheckCircleOutlined /> :
+           active.nodeType === 'CUSTOM_OUTPUT' ? <FunctionOutlined /> :
            <EllipsisOutlined />}
         </div>
         <div style={{ flex: 1 }}>
@@ -1394,6 +1569,20 @@ function RightEditPanel({
             onOpenSubEditor={(i, m) => { onSave(active.nodeId, { ...localConfig }, localLabel); onOpenModelEditor(active.nodeId, i, m); onClose(); }}
           />
         )}
+
+        {active.nodeType === 'OUTCOME' && (
+          <InlineOutcomeEditor
+            config={localConfig as unknown as OutcomeNodeConfig}
+            onChange={cfg => setLocalConfig(cfg as unknown as Record<string, unknown>)}
+          />
+        )}
+
+        {active.nodeType === 'CUSTOM_OUTPUT' && (
+          <InlineCustomOutputEditor
+            template={(localConfig.template as string) || ''}
+            onChange={template => setLocalConfig(c => ({ ...c, template }))}
+          />
+        )}
       </div>
 
       {/* Panel footer */}
@@ -1440,7 +1629,14 @@ function QuickAddMenu({ screenPos, onSelect, onClose }: {
         </div>
         {PALETTE_OUTCOMES.map(o => (
           <QuickAddRow key={o.label} icon={o.icon} label={o.label} color={o.color} bg={o.bg}
-            onClick={() => { onSelect('OUTCOME', { outcome: o.outcome || '' }); onClose(); }} />
+            onClick={() => {
+              if (o.type === 'CUSTOM_OUTPUT') {
+                onSelect('CUSTOM_OUTPUT', { template: '' });
+              } else {
+                onSelect('OUTCOME', { outcome: o.outcome || '' });
+              }
+              onClose();
+            }} />
         ))}
       </div>
     </>
