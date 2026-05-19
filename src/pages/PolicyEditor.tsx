@@ -1366,11 +1366,31 @@ function InlineOutcomeEditor({ config, onChange }: {
   config: OutcomeNodeConfig;
   onChange: (c: OutcomeNodeConfig) => void;
 }) {
+  const fields: Record<string, unknown> = config.outputFields || {};
+  const fieldEntries = Object.entries(fields);
+
+  const addField = () => {
+    const key = `field_${fieldEntries.length + 1}`;
+    onChange({ ...config, outputFields: { ...fields, [key]: '' } });
+  };
+  const updateFieldKey = (oldKey: string, newKey: string) => {
+    const next: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(fields)) { next[k === oldKey ? newKey : k] = v; }
+    onChange({ ...config, outputFields: next });
+  };
+  const updateFieldVal = (key: string, val: string) => {
+    onChange({ ...config, outputFields: { ...fields, [key]: val } });
+  };
+  const removeField = (key: string) => {
+    const next = { ...fields }; delete next[key];
+    onChange({ ...config, outputFields: next });
+  };
+
   const exprs: Record<string, string> = config.outputExpressions || {};
   const exprEntries = Object.entries(exprs);
 
   const addExpr = () => {
-    const key = `field_${exprEntries.length + 1}`;
+    const key = `expr_${exprEntries.length + 1}`;
     onChange({ ...config, outputExpressions: { ...exprs, [key]: '' } });
   };
   const updateExprKey = (oldKey: string, newKey: string) => {
@@ -1396,6 +1416,43 @@ function InlineOutcomeEditor({ config, onChange }: {
           style={{ borderRadius: 6 }}
         />
       </FieldGroup>
+
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Output Fields</div>
+        <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 10, lineHeight: 1.6 }}>
+          Static key-value pairs returned with the outcome result.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {fieldEntries.map(([key, val]) => (
+            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <Input
+                size="small"
+                value={key}
+                onChange={e => updateFieldKey(key, e.target.value)}
+                placeholder="key"
+                style={{ width: 110, flexShrink: 0, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
+              />
+              <Input
+                size="small"
+                value={val === null || val === undefined ? '' : String(val)}
+                onChange={e => updateFieldVal(key, e.target.value)}
+                placeholder="value"
+                style={{ flex: 1, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
+              />
+              <button onClick={() => removeField(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12, flexShrink: 0 }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
+                <DeleteOutlined />
+              </button>
+            </div>
+          ))}
+          <button onClick={addField} style={{ background: '#fff', border: '1.5px dashed #d1d5db', borderRadius: 8, color: '#6b7280', fontSize: 12, fontWeight: 600, padding: '7px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', transition: 'background 0.15s' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f9fafb')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+            <PlusOutlined style={{ fontSize: 11 }} /> Add Field
+          </button>
+        </div>
+      </div>
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Output Expressions</div>
