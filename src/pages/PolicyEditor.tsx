@@ -24,8 +24,8 @@ import {
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
   DownloadOutlined, UndoOutlined, RedoOutlined,
 } from '@ant-design/icons';
-import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions } from '../api/client';
-import type { LookupSummary, PolicySummary } from '../types';
+import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions, validateExpressions } from '../api/client';
+import type { LookupSummary, PolicySummary, ExpressionEntry, ExpressionValidationError } from '../types';
 import type {
   PolicyNode, PolicyEdge, SavePolicyRequest,
   RuleNodeConfig, BranchNodeConfig, WorkflowNodeConfig,
@@ -1180,6 +1180,95 @@ function FieldGroup({ label, children, hint }: { label: string; children: React.
   );
 }
 
+// ── Expression input with on-blur validation ──────────────────────────────────
+
+function ExpressionInput({
+  value, onChange, placeholder = 'expression', rows = 2, label, isTemplate = false,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  rows?: number;
+  label: string;
+  isTemplate?: boolean;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const validate = useCallback(async (expr: string) => {
+    if (!expr?.trim()) { setError(null); return; }
+    setChecking(true);
+    try {
+      const entry: ExpressionEntry = isTemplate
+        ? { label, template: expr }
+        : { label, expression: expr };
+      const res = await validateExpressions([entry]);
+      setError(res.errors.length > 0 ? res.errors[0].message : null);
+    } catch { /* network error — don't block */ }
+    finally { setChecking(false); }
+  }, [label, isTemplate]);
+
+  return (
+    <div>
+      <Input.TextArea
+        size="small" value={value} rows={rows}
+        onChange={e => { onChange(e.target.value); setError(null); }}
+        onBlur={e => validate(e.target.value)}
+        placeholder={placeholder}
+        status={error ? 'error' : undefined}
+        style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, borderRadius: 6, resize: 'vertical' }}
+      />
+      {checking && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Checking…</div>}
+      {error && !checking && (
+        <div style={{ fontSize: 10, color: '#ef4444', marginTop: 3, lineHeight: 1.4, display: 'flex', gap: 4 }}>
+          <span>⚠</span><span>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Collect all expressions from nodes for batch validation ───────────────────
+
+function collectExpressionsFromNodes(nodes: Node[]): ExpressionEntry[] {
+  const entries: ExpressionEntry[] = [];
+  for (const node of nodes) {
+    const cfg = node.data?.config || {};
+    const lbl = (node.data?.label as string) || node.id;
+
+    if (node.type === 'RULE') {
+      ((cfg as RuleNodeConfig).rules || []).forEach((r, i) => {
+        if (r.expression?.trim())
+          entries.push({ label: `${lbl} › rule[${i}] ${r.name}`, expression: r.expression });
+        if (r.cantDecideExpression?.trim())
+          entries.push({ label: `${lbl} › rule[${i}] ${r.name} (cantDecide)`, expression: r.cantDecideExpression });
+      });
+    }
+    if (node.type === 'BRANCH') {
+      ((cfg as BranchNodeConfig).conditions || []).forEach((c, i) => {
+        if (c.expression?.trim())
+          entries.push({ label: `${lbl} › condition[${i}] ${c.id}`, expression: c.expression });
+      });
+    }
+    if (node.type === 'OUTCOME') {
+      Object.entries((cfg as OutcomeNodeConfig).outputExpressions || {}).forEach(([k, v]) => {
+        if (v?.trim()) entries.push({ label: `${lbl} › outputExpression ${k}`, expression: v });
+      });
+    }
+    if (node.type === 'MODEL') {
+      ((cfg as ModelNodeConfig).models || []).forEach((m, i) => {
+        if (m.type === 'EXPRESSION' && m.expression?.trim())
+          entries.push({ label: `${lbl} › model[${i}] ${m.name}`, expression: m.expression });
+      });
+    }
+    if (node.type === 'CUSTOM_OUTPUT') {
+      const tpl = (cfg as CustomOutputNodeConfig).template;
+      if (tpl?.trim()) entries.push({ label: `${lbl} › template`, template: tpl });
+    }
+  }
+  return entries;
+}
+
 function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (r: GraphRule[]) => void }) {
   const add = () => onChange([...rules, { name: `rule_${rules.length + 1}`, expression: '', priority: rules.length + 1 }]);
   const update = (i: number, field: keyof GraphRule, val: string | number) => {
@@ -1211,15 +1300,15 @@ function InlineRuleEditor({ rules, onChange }: { rules: GraphRule[]; onChange: (
               <Input size="small" value={r.name} onChange={e => update(i, 'name', e.target.value)} style={{ borderRadius: 6 }} />
             </FieldGroup>
             <FieldGroup label="Expression">
-              <Input.TextArea size="small" value={r.expression} rows={2}
-                onChange={e => update(i, 'expression', e.target.value)}
-                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+              <ExpressionInput
+                value={r.expression} onChange={v => update(i, 'expression', v)}
+                label={`rule ${r.name || i} › expression`} />
             </FieldGroup>
             <FieldGroup label="Can't Decide Expression">
-              <Input.TextArea size="small" value={r.cantDecideExpression || ''} rows={2}
-                onChange={e => update(i, 'cantDecideExpression', e.target.value)}
-                placeholder="e.g. bureau.score == nil"
-                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+              <ExpressionInput
+                value={r.cantDecideExpression || ''} onChange={v => update(i, 'cantDecideExpression', v)}
+                placeholder="e.g. bureau.score IS NULL"
+                label={`rule ${r.name || i} › cantDecide`} />
             </FieldGroup>
           </div>
         </div>
@@ -1258,9 +1347,9 @@ function InlineConditionEditor({ conditions, onChange }: { conditions: BranchCon
               <Input size="small" value={c.label || ''} onChange={e => update(i, 'label', e.target.value)} style={{ borderRadius: 6 }} />
             </FieldGroup>
             <FieldGroup label="Expression">
-              <Input.TextArea size="small" value={c.expression} rows={2}
-                onChange={e => update(i, 'expression', e.target.value)}
-                style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+              <ExpressionInput
+                value={c.expression} onChange={v => update(i, 'expression', v)}
+                label={`branch ${c.id} › expression`} />
             </FieldGroup>
           </div>
         </div>
@@ -1319,9 +1408,9 @@ function ModelSetEditor({
             </FieldGroup>
             {m.type === 'EXPRESSION' && (
               <FieldGroup label="Expression">
-                <Input.TextArea size="small" value={m.expression || ''} rows={2}
-                  onChange={e => update(i, { expression: e.target.value })}
-                  style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }} />
+                <ExpressionInput
+                  value={m.expression || ''} onChange={v => update(i, { expression: v })}
+                  label={`model ${m.name || i} › expression`} />
               </FieldGroup>
             )}
             {(m.type === 'SCORECARD' || m.type === 'DECISION_TABLE') && (
@@ -1351,13 +1440,10 @@ function InlineCustomOutputEditor({ template, onChange }: { template: string; on
       label="Template"
       hint={'JSON-like structure. Quoted values are literals; unquoted values are expressions. Use workflows[\'policyId version\'].outcome to reference sub-policy results.'}
     >
-      <Input.TextArea
-        value={template}
-        rows={14}
-        onChange={e => onChange(e.target.value)}
+      <ExpressionInput
+        value={template} onChange={onChange} rows={14}
         placeholder={`[\n  {\n    "bank_name": "AU Small Finance Bank",\n    "decision": IFELSE(workflows['LMP_AU v1.0'].outcome == "approved", "approved", "rejected")\n  }\n]`}
-        style={{ borderRadius: 6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 11, background: '#0f172a', color: '#e2e8f0', border: '1px solid #1e293b', resize: 'vertical' }}
-      />
+        label="custom output › template" isTemplate />
     </FieldGroup>
   );
 }
@@ -1461,7 +1547,7 @@ function InlineOutcomeEditor({ config, onChange }: {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {exprEntries.map(([key, val]) => (
-            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <Input
                 size="small"
                 value={key}
@@ -1469,14 +1555,13 @@ function InlineOutcomeEditor({ config, onChange }: {
                 placeholder="key"
                 style={{ width: 110, flexShrink: 0, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
               />
-              <Input
-                size="small"
-                value={val}
-                onChange={e => updateExprVal(key, e.target.value)}
-                placeholder="expression"
-                style={{ flex: 1, borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
-              />
-              <button onClick={() => removeExpr(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12, flexShrink: 0 }}
+              <div style={{ flex: 1 }}>
+                <ExpressionInput
+                  value={val} onChange={v => updateExprVal(key, v)}
+                  placeholder="expression" rows={1}
+                  label={`outcome › outputExpression ${key}`} />
+              </div>
+              <button onClick={() => removeExpr(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', fontSize: 12, flexShrink: 0, marginTop: 4 }}
                 onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
                 onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}>
                 <DeleteOutlined />
@@ -2097,6 +2182,9 @@ function PolicyEditorContent() {
   }, [isDirty]);
 
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ExpressionValidationError[]>([]);
+  const [validationPanelOpen, setValidationPanelOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
 
   // Right panel state
@@ -2323,6 +2411,24 @@ function PolicyEditorContent() {
     return () => window.removeEventListener('keydown', handler);
   }, [confirmDelete, undo, redo]);
 
+  // ── Validate all ────────────────────────────────────────────────────────────
+
+  const handleValidateAll = async () => {
+    const entries = collectExpressionsFromNodes(nodes);
+    if (entries.length === 0) { message.info('No expressions to validate'); return; }
+    setValidating(true);
+    try {
+      const result = await validateExpressions(entries);
+      setValidationErrors(result.errors);
+      setValidationPanelOpen(true);
+      if (result.valid) message.success(`All ${entries.length} expressions valid`);
+    } catch {
+      message.error('Validation request failed');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   // ── Save ────────────────────────────────────────────────────────────────────
 
   const handleExport = () => {
@@ -2345,6 +2451,30 @@ function PolicyEditorContent() {
 
   const handleSave = async () => {
     if (!meta.policyId || !meta.version) { message.error('Policy ID and Version are required'); return; }
+
+    // Validate all expressions before saving
+    const entries = collectExpressionsFromNodes(nodes);
+    if (entries.length > 0) {
+      setValidating(true);
+      let result;
+      try {
+        result = await validateExpressions(entries);
+      } catch {
+        message.error('Validation request failed — cannot save');
+        setValidating(false);
+        return;
+      } finally {
+        setValidating(false);
+      }
+      if (!result.valid) {
+        setValidationErrors(result.errors);
+        setValidationPanelOpen(true);
+        message.error(`Fix ${result.errors.length} expression error${result.errors.length > 1 ? 's' : ''} before saving`);
+        return;
+      }
+      setValidationErrors([]);
+    }
+
     const { policyNodes, policyEdges } = rfNodesToPolicy(nodes, edges);
     const req: SavePolicyRequest = {
       description: meta.description || undefined,
@@ -2464,6 +2594,23 @@ function PolicyEditorContent() {
             />
           </Tooltip>
           <div style={{ width: 1, height: 22, background: '#334155', margin: '0 4px' }} />
+          <Tooltip title="Validate all expressions">
+            <Button
+              size="small"
+              loading={validating}
+              onClick={handleValidateAll}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${validationErrors.length > 0 ? '#ef4444' : '#334155'}`,
+                color: validationErrors.length > 0 ? '#ef4444' : '#94a3b8',
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              {validationErrors.length > 0 ? `⚠ ${validationErrors.length} error${validationErrors.length > 1 ? 's' : ''}` : '✓ Validate'}
+            </Button>
+          </Tooltip>
           <Button
             icon={<SaveOutlined />} type="primary" loading={saving} onClick={handleSave}
             style={{ fontWeight: 600, borderRadius: 8, paddingLeft: 18, paddingRight: 18 }}
@@ -2649,6 +2796,55 @@ function PolicyEditorContent() {
         onOk={m => { setMeta(m); setMetaOpen(false); }}
         onCancel={() => navigate('/')}
       />
+
+      {/* ── Validation errors modal ──────────────────────────────────── */}
+      <Modal
+        open={validationPanelOpen}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {validationErrors.length === 0
+              ? <CheckCircleOutlined style={{ color: '#22c55e' }} />
+              : <CloseCircleOutlined style={{ color: '#ef4444' }} />}
+            <span>
+              {validationErrors.length === 0
+                ? 'All expressions valid'
+                : `${validationErrors.length} expression error${validationErrors.length > 1 ? 's' : ''} found`}
+            </span>
+          </div>
+        }
+        onCancel={() => setValidationPanelOpen(false)}
+        footer={
+          <Button type="primary" onClick={() => setValidationPanelOpen(false)}>Close</Button>
+        }
+        width={600}
+      >
+        {validationErrors.length === 0 ? (
+          <div style={{ color: '#64748b', padding: '8px 0' }}>
+            All expressions parsed successfully. You can safely save this policy.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 400, overflowY: 'auto' }}>
+            {validationErrors.map((err, i) => (
+              <div key={i} style={{
+                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                padding: '10px 14px',
+              }}>
+                <div style={{ fontWeight: 600, color: '#dc2626', fontSize: 13, marginBottom: 4 }}>
+                  {err.label}
+                </div>
+                <div style={{ color: '#7f1d1d', fontSize: 12, fontFamily: 'monospace' }}>
+                  {err.message}
+                  {(err.line != null || err.column != null) && (
+                    <span style={{ marginLeft: 8, color: '#991b1b', opacity: 0.7 }}>
+                      (line {err.line ?? '?'}, col {err.column ?? '?'})
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
     </ModelEditorContext.Provider>
     </EditPanelContext.Provider>

@@ -1,3 +1,23 @@
+// ── Expression validation types ───────────────────────────────────────────────
+
+export interface ExpressionEntry {
+  label: string;
+  expression?: string;
+  template?: string;
+}
+
+export interface ExpressionValidationError {
+  label: string;
+  message: string;
+  line?: number;
+  column?: number;
+}
+
+export interface ValidateExpressionsResponse {
+  valid: boolean;
+  errors: ExpressionValidationError[];
+}
+
 // ── Auth types ────────────────────────────────────────────────────────────────
 
 export interface AuthUser {

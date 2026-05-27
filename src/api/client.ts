@@ -2,6 +2,8 @@ import type {
   EvaluationLogDetail,
   EvaluationLogSummary,
   EvaluationResult,
+  ExpressionEntry,
+  ValidateExpressionsResponse,
   Page,
   Policy,
   PolicyStats,
@@ -323,6 +325,20 @@ export async function downloadLookupFile(lookupId: string, version: string): Pro
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// ── Validation API ────────────────────────────────────────────────────────────
+
+export async function validateExpressions(
+  expressions: ExpressionEntry[],
+): Promise<ValidateExpressionsResponse> {
+  return handleResponse(
+    await apiFetch(`${BASE}/validate/expressions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expressions }),
+    }),
+  );
 }
 
 export async function deleteLookup(lookupId: string): Promise<void> {
