@@ -8,6 +8,7 @@ import PolicyEditor from './pages/PolicyEditor';
 import DecisionTableEditor from './pages/DecisionTableEditor';
 import ScorecardEditor from './pages/ScorecardEditor';
 import LookupList from './pages/LookupList';
+import ExpressionReferencePage from './pages/ExpressionReferencePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -54,6 +55,7 @@ const router = createBrowserRouter([
       { path: '/',                   element: <PolicyList /> },
       { path: '/policies/:policyId', element: <PolicyDetail /> },
       { path: '/lookups',            element: <LookupList /> },
+      { path: '/docs/expressions',   element: <ExpressionReferencePage /> },
     ],
   },
 

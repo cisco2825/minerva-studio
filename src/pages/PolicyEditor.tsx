@@ -26,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions, validateExpressions } from '../api/client';
 import type { LookupSummary, PolicySummary, ExpressionEntry, ExpressionValidationError } from '../types';
+import ExpressionReference, { NODE_TYPE_TO_SECTION } from '../components/ExpressionReference';
 import type {
   PolicyNode, PolicyEdge, SavePolicyRequest,
   RuleNodeConfig, BranchNodeConfig, WorkflowNodeConfig,
@@ -2185,6 +2186,15 @@ function PolicyEditorContent() {
   const [validating, setValidating] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ExpressionValidationError[]>([]);
   const [validationPanelOpen, setValidationPanelOpen] = useState(false);
+
+  const [refOpen, setRefOpen] = useState(false);
+  const [refSection, setRefSection] = useState<string | undefined>(undefined);
+
+  const openRef = (nodeType?: string) => {
+    setRefSection(nodeType ? (NODE_TYPE_TO_SECTION[nodeType] ?? 'overview') : 'overview');
+    setRefOpen(true);
+  };
+
   const [paletteOpen, setPaletteOpen] = useState(true);
 
   // Right panel state
@@ -2594,6 +2604,20 @@ function PolicyEditorContent() {
             />
           </Tooltip>
           <div style={{ width: 1, height: 22, background: '#334155', margin: '0 4px' }} />
+          <Tooltip title="Expression language reference">
+            <Button
+              size="small"
+              onClick={() => openRef(activeEdit?.nodeType)}
+              style={{
+                background: refOpen ? 'rgba(99,102,241,0.15)' : 'transparent',
+                border: `1px solid ${refOpen ? '#6366f1' : '#334155'}`,
+                color: refOpen ? '#818cf8' : '#94a3b8',
+                borderRadius: 8, fontWeight: 600, fontSize: 12,
+              }}
+            >
+              ⌨ Expr Ref
+            </Button>
+          </Tooltip>
           <Tooltip title="Validate all expressions">
             <Button
               size="small"
@@ -2796,6 +2820,74 @@ function PolicyEditorContent() {
         onOk={m => { setMeta(m); setMetaOpen(false); }}
         onCancel={() => navigate('/')}
       />
+
+      {/* ── Expression Reference drawer ─────────────────────────────── */}
+      <Drawer
+        open={refOpen}
+        onClose={() => setRefOpen(false)}
+        placement="right"
+        width={460}
+        mask={false}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: 6,
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <span style={{ color: '#fff', fontSize: 12 }}>⌨</span>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
+                Expression Reference
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1 }}>
+                {activeEdit ? `Opened from: ${activeEdit.nodeType} node` : 'All sections'}
+              </div>
+            </div>
+          </div>
+        }
+        styles={{
+          header: { borderBottom: '1px solid #e2e8f0', padding: '14px 16px' },
+          body:   { padding: '16px', overflowY: 'auto' },
+        }}
+        style={{ boxShadow: '-4px 0 24px rgba(0,0,0,0.12)' }}
+      >
+        {/* Section jump chips */}
+        <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {[
+            { id: 'operators',        label: 'Operators' },
+            { id: 'conditionals',     label: 'Conditions' },
+            { id: 'functions',        label: 'Functions' },
+            { id: 'lookups',          label: 'Lookups' },
+            { id: 'let-blocks',       label: 'LET' },
+            { id: 'workflow-results', label: 'Workflows' },
+            { id: 'custom-output',    label: 'Templates' },
+            { id: 'quick-reference',  label: 'Quick Ref' },
+          ].map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => {
+                setRefSection(id);
+                const el = document.getElementById(`ref-sec-${id}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              style={{
+                padding: '3px 10px',
+                borderRadius: 20,
+                border: `1px solid ${refSection === id ? '#6366f1' : '#e2e8f0'}`,
+                background: refSection === id ? '#eef2ff' : '#fff',
+                color: refSection === id ? '#4f46e5' : '#64748b',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <ExpressionReference targetSection={refSection} compact />
+      </Drawer>
 
       {/* ── Validation errors modal ──────────────────────────────────── */}
       <Modal

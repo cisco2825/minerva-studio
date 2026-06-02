@@ -7,6 +7,7 @@ import {
   DatabaseOutlined,
   TableOutlined,
   LogoutOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -137,6 +138,20 @@ export default function AppLayout() {
                     icon: <TableOutlined />,
                     label: 'Lookup Tables',
                     onClick: () => navigate('/lookups'),
+                  },
+                ],
+              },
+              { type: 'divider' },
+              {
+                key: 'help-group',
+                icon: <ReadOutlined />,
+                label: 'Help',
+                children: [
+                  {
+                    key: '/docs/expressions',
+                    icon: <ReadOutlined />,
+                    label: 'Expression Reference',
+                    onClick: () => navigate('/docs/expressions'),
                   },
                 ],
               },
