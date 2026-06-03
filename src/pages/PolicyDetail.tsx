@@ -171,13 +171,15 @@ function VersionsTab({ policyId }: { policyId: string }) {
               Edit
             </Button>
           )}
-          <Button
-            size="small" icon={<CopyOutlined />}
-            loading={editLoading === `${row.version}-newVersion`}
-            onClick={() => openEditor(row, 'newVersion')}
-          >
-            New Version
-          </Button>
+          {row.status !== 'DRAFT' && (
+            <Button
+              size="small" icon={<CopyOutlined />}
+              loading={editLoading === `${row.version}-newVersion`}
+              onClick={() => openEditor(row, 'newVersion')}
+            >
+              New Version
+            </Button>
+          )}
           {NEXT_ACTIONS[row.status].map(({ label, next, danger }) => (
             <Popconfirm
               key={next}
