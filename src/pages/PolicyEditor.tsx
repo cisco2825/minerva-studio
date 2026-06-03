@@ -22,7 +22,7 @@ import {
   DatabaseOutlined, ApiOutlined, SaveOutlined,
   CalculatorOutlined, TableOutlined, FunctionOutlined,
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
-  DownloadOutlined, UndoOutlined, RedoOutlined,
+  DownloadOutlined, ReadOutlined,
 } from '@ant-design/icons';
 import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions, validateExpressions } from '../api/client';
 import type { LookupSummary, PolicySummary, ExpressionEntry, ExpressionValidationError } from '../types';
@@ -2139,8 +2139,6 @@ function PolicyEditorContent() {
   const historyPointer = useRef(-1);
   const savedPointer   = useRef(0);   // pointer value at last successful save / initial load
   const skipHistory = useRef(false);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
   // Initialize history with starting state on mount
@@ -2212,8 +2210,6 @@ function PolicyEditorContent() {
     historyStack.current.push({ nodes: newNodes, edges: newEdges });
     if (historyStack.current.length > 60) historyStack.current.shift();
     else historyPointer.current++;
-    setCanUndo(historyPointer.current > 0);
-    setCanRedo(false);
     setIsDirty(historyPointer.current !== savedPointer.current);
   }, []);
 
@@ -2225,8 +2221,6 @@ function PolicyEditorContent() {
     setNodes(snap.nodes);
     setEdges(snap.edges);
     skipHistory.current = false;
-    setCanUndo(historyPointer.current > 0);
-    setCanRedo(true);
     setIsDirty(historyPointer.current !== savedPointer.current);
   }, [setNodes, setEdges]);
 
@@ -2238,8 +2232,6 @@ function PolicyEditorContent() {
     setNodes(snap.nodes);
     setEdges(snap.edges);
     skipHistory.current = false;
-    setCanUndo(true);
-    setCanRedo(historyPointer.current < historyStack.current.length - 1);
     setIsDirty(historyPointer.current !== savedPointer.current);
   }, [setNodes, setEdges]);
 
@@ -2518,126 +2510,155 @@ function PolicyEditorContent() {
     <ModelEditorContext.Provider value={{ openModelEditor: onOpenModelEditor }}>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
 
+      {/* ── Brand gradient strip ──────────────────────────────────────── */}
+      <div style={{
+        height: 2, flexShrink: 0,
+        background: 'linear-gradient(90deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%)',
+      }} />
+
       {/* ── Top bar ──────────────────────────────────────────────────── */}
       <div style={{
-        height: 58, background: '#0f172a', flexShrink: 0,
-        borderBottom: '1px solid #1e293b',
+        height: 52, background: '#0f172a', flexShrink: 0,
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center', padding: '0 20px', gap: 0,
       }}>
         {/* Minerva logo mark — click to go home */}
         <div
           onClick={() => navigate('/')}
           style={{
-            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+            width: 28, height: 28, borderRadius: 7, flexShrink: 0,
             background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', marginRight: 16,
-            boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
+            cursor: 'pointer', marginRight: 14,
+            boxShadow: '0 2px 8px rgba(99,102,241,0.4)',
             transition: 'opacity 0.15s',
           }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
           onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
         >
-          <ThunderboltFilled style={{ color: '#fff', fontSize: 14 }} />
+          <ThunderboltFilled style={{ color: '#fff', fontSize: 13 }} />
         </div>
 
-        <div style={{ width: 1, height: 24, background: '#334155', marginRight: 16, flexShrink: 0 }} />
+        <div style={{ width: 1, height: 20, background: '#1e293b', marginRight: 14, flexShrink: 0 }} />
 
-        {/* Breadcrumb + badges */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0, flex: 1, minWidth: 0 }}>
-          <span style={{ color: '#1e293b', fontSize: 16, marginRight: 10, flexShrink: 0 }}>/</span>
+        {/* Policy name + badges */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
           <span style={{
-            color: '#f1f5f9', fontWeight: 600, fontSize: 15,
+            color: '#f1f5f9', fontWeight: 600, fontSize: 14,
             letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {pageTitle}
           </span>
 
+          {/* Unsaved indicator */}
+          {isDirty && (
+            <Tooltip title="Unsaved changes">
+              <div style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: '#f59e0b',
+                boxShadow: '0 0 0 2px rgba(245,158,11,0.2)',
+              }} />
+            </Tooltip>
+          )}
+
           {meta.version && (
             <span style={{
-              marginLeft: 12, flexShrink: 0,
-              background: '#1e293b', border: '1px solid #334155',
-              color: '#64748b', fontSize: 11, fontWeight: 600,
-              padding: '2px 9px', borderRadius: 20, letterSpacing: '0.03em',
+              flexShrink: 0,
+              background: '#1e293b', border: '1px solid #2d3748',
+              color: '#475569', fontSize: 10.5, fontWeight: 600,
+              padding: '2px 8px', borderRadius: 20, letterSpacing: '0.02em',
             }}>
               v{meta.version}
             </span>
           )}
 
           <span style={{
-            marginLeft: 8, flexShrink: 0,
-            background: editorMode === 'editDraft' ? 'rgba(217,119,6,0.12)' : 'rgba(59,130,246,0.12)',
-            border: `1px solid ${editorMode === 'editDraft' ? 'rgba(217,119,6,0.5)' : 'rgba(59,130,246,0.5)'}`,
-            color: editorMode === 'editDraft' ? '#f59e0b' : '#60a5fa',
+            flexShrink: 0,
+            background: editorMode === 'editDraft' ? 'rgba(245,158,11,0.1)' : 'rgba(99,102,241,0.1)',
+            border: `1px solid ${editorMode === 'editDraft' ? 'rgba(245,158,11,0.3)' : 'rgba(99,102,241,0.3)'}`,
+            color: editorMode === 'editDraft' ? '#fbbf24' : '#818cf8',
             fontSize: 10, fontWeight: 700,
-            padding: '2px 9px', borderRadius: 20,
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            padding: '2px 8px', borderRadius: 20,
+            textTransform: 'uppercase', letterSpacing: '0.07em',
           }}>
             {editorMode === 'editDraft' ? 'Draft' : 'New'}
           </span>
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <Tooltip title="Undo (⌘Z)">
-            <Button
-              size="small" icon={<UndoOutlined />} onClick={undo} disabled={!canUndo}
-              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
-            />
-          </Tooltip>
-          <Tooltip title="Redo (⌘⇧Z)">
-            <Button
-              size="small" icon={<RedoOutlined />} onClick={redo} disabled={!canRedo}
-              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
-            />
-          </Tooltip>
-          <Tooltip title="Delete selected  (Del)">
-            <Button
-              size="small" icon={<DeleteOutlined />} onClick={confirmDelete}
-              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
-            />
-          </Tooltip>
-          <Tooltip title="Download policy JSON">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+
+          {/* Export JSON */}
+          <Tooltip title="Export policy JSON">
             <Button
               size="small" icon={<DownloadOutlined />} onClick={handleExport}
-              style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8 }}
+              style={{
+                background: 'transparent', border: '1px solid #334155',
+                color: '#94a3b8', borderRadius: 7,
+                width: 30, height: 30,
+              }}
             />
           </Tooltip>
-          <div style={{ width: 1, height: 22, background: '#334155', margin: '0 4px' }} />
+
+          <div style={{ width: 1, height: 20, background: '#334155', margin: '0 6px' }} />
+
+          {/* Expression Reference */}
           <Tooltip title="Expression language reference">
             <Button
               size="small"
+              icon={<ReadOutlined />}
               onClick={() => openRef(activeEdit?.nodeType)}
               style={{
                 background: refOpen ? 'rgba(99,102,241,0.15)' : 'transparent',
                 border: `1px solid ${refOpen ? '#6366f1' : '#334155'}`,
                 color: refOpen ? '#818cf8' : '#94a3b8',
-                borderRadius: 8, fontWeight: 600, fontSize: 12,
+                borderRadius: 7, height: 30, fontSize: 12, fontWeight: 500,
+                paddingLeft: 10, paddingRight: 10,
+                transition: 'all 0.15s',
               }}
             >
-              ⌨ Expr Ref
+              Expr Ref
             </Button>
           </Tooltip>
-          <Tooltip title="Validate all expressions">
+
+          {/* Validate */}
+          <Tooltip title={
+            validationErrors.length > 0
+              ? `${validationErrors.length} expression error${validationErrors.length > 1 ? 's' : ''} — click to review`
+              : 'Validate all expressions'
+          }>
             <Button
               size="small"
               loading={validating}
               onClick={handleValidateAll}
               style={{
-                background: 'transparent',
-                border: `1px solid ${validationErrors.length > 0 ? '#ef4444' : '#334155'}`,
-                color: validationErrors.length > 0 ? '#ef4444' : '#94a3b8',
-                borderRadius: 8,
-                fontWeight: 600,
-                fontSize: 12,
+                background: validationErrors.length > 0 ? 'rgba(239,68,68,0.1)' : 'transparent',
+                border: `1px solid ${validationErrors.length > 0 ? 'rgba(239,68,68,0.5)' : '#334155'}`,
+                color: validationErrors.length > 0 ? '#f87171' : '#94a3b8',
+                borderRadius: 7, height: 30, fontSize: 12, fontWeight: 500,
+                paddingLeft: 10, paddingRight: 10,
+                transition: 'all 0.15s',
               }}
             >
-              {validationErrors.length > 0 ? `⚠ ${validationErrors.length} error${validationErrors.length > 1 ? 's' : ''}` : '✓ Validate'}
+              {!validating && (validationErrors.length > 0
+                ? `⚠ ${validationErrors.length} error${validationErrors.length > 1 ? 's' : ''}`
+                : '✓ Validate')}
             </Button>
           </Tooltip>
+
+          <div style={{ width: 1, height: 20, background: '#334155', margin: '0 6px' }} />
+
+          {/* Save */}
           <Button
-            icon={<SaveOutlined />} type="primary" loading={saving} onClick={handleSave}
-            style={{ fontWeight: 600, borderRadius: 8, paddingLeft: 18, paddingRight: 18 }}
+            type="primary" loading={saving} onClick={handleSave}
+            icon={!saving ? <SaveOutlined /> : undefined}
+            style={{
+              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+              border: 'none', borderRadius: 7, height: 34,
+              fontWeight: 600, fontSize: 13, letterSpacing: '-0.01em',
+              paddingLeft: 16, paddingRight: 16,
+              boxShadow: '0 1px 6px rgba(99,102,241,0.4)',
+            }}
           >
             {editorMode === 'editDraft' ? 'Save Draft' : 'Save Policy'}
           </Button>
