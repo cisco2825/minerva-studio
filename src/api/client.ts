@@ -268,6 +268,13 @@ export async function fetchAllLookups(): Promise<LookupSummary[]> {
   return [first, ...rest].flatMap(p => p.content);
 }
 
+/** Returns CSV column headers for the latest active version of a lookup.
+ *  The BE reads from S3 on first call and caches the result in the lookup body. */
+export async function fetchLookupColumns(lookupId: string): Promise<string[]> {
+  const res = await apiFetch(`${BASE}/lookups/${encodeURIComponent(lookupId)}/columns`);
+  return handleResponse<string[]>(res);
+}
+
 /** Step 1 of create flow: upload the CSV file to S3, get back a fileRef. */
 export async function uploadLookupFile(
   file: File,

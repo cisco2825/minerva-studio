@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect, createContext, useContext } from 'react';
+import { useCallback, useRef, useState, useEffect, useMemo, createContext, useContext } from 'react';
 import { useNavigate, useLocation, useBlocker } from 'react-router-dom';
 import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap,
@@ -24,7 +24,7 @@ import {
   EllipsisOutlined, ExpandOutlined, CaretRightOutlined, SearchOutlined,
   DownloadOutlined, ReadOutlined,
 } from '@ant-design/icons';
-import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions, validateExpressions } from '../api/client';
+import { createPolicy, updateDraftPolicy, fetchAllLookups, fetchAllPolicies, fetchPolicyDefinition, fetchVersions, validateExpressions, fetchLookupColumns } from '../api/client';
 import type { LookupSummary, PolicySummary, ExpressionEntry, ExpressionValidationError } from '../types';
 import ExpressionReference, { NODE_TYPE_TO_SECTION } from '../components/ExpressionReference';
 import type {
@@ -56,6 +56,19 @@ interface ModelEditorContextType {
   openModelEditor: (nodeId: string, modelIndex: number, model: ModelEntry) => void;
 }
 const ModelEditorContext = createContext<ModelEditorContextType | null>(null);
+
+// ── Lookup metadata context ────────────────────────────────────────────────────
+// Provides lookupId → column names mapping to all ExpressionInput instances
+// without prop-drilling. Populated once by PolicyEditorContent.
+interface LookupMetaCtx {
+  meta: Record<string, string[]>;
+  /** Lazily fetches columns from the BE if the lookup has no stored metadata yet. */
+  fetchColumns: (lookupId: string) => Promise<string[]>;
+}
+const LookupMetaContext = createContext<LookupMetaCtx>({
+  meta: {},
+  fetchColumns: async () => [],
+});
 
 // ── Palette config ────────────────────────────────────────────────────────────
 
@@ -1183,6 +1196,121 @@ function FieldGroup({ label, children, hint }: { label: string; children: React.
 
 // ── Expression input with on-blur validation ──────────────────────────────────
 
+// ── LOOKUP() autocomplete helpers ─────────────────────────────────────────────
+
+/** Given the text before the cursor, determine autocomplete intent. */
+function detectLookupIntent(textBefore: string): {
+  type: 'name' | 'column';
+  typed: string;
+  lookupName?: string;
+} | null {
+  // Inside second arg: LOOKUP("name", "<cursor>
+  const colMatch = textBefore.match(/LOOKUP\s*\(\s*"([^"]+)"\s*,\s*"([^"]*)$/i);
+  if (colMatch) return { type: 'column', typed: colMatch[2], lookupName: colMatch[1] };
+  // Inside first arg: LOOKUP("<cursor>
+  const nameMatch = textBefore.match(/LOOKUP\s*\(\s*"([^"]*)$/i);
+  if (nameMatch) return { type: 'name', typed: nameMatch[1] };
+  return null;
+}
+
+// ── Shared expression editor core (used inline + in expand modal) ─────────────
+
+function ExpressionEditorCore({
+  value, onChange, placeholder, rows = 2,
+  textareaRef, onBlurValidate, inlineSuggestions = false,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  rows?: number;
+  textareaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
+  onBlurValidate: (val: string) => void;
+  /** When true, suggestions render in document flow below the textarea instead of
+   *  absolutely positioned — use this inside modals to avoid clipping. */
+  inlineSuggestions?: boolean;
+}) {
+  const { meta: lookupsMeta, fetchColumns } = useContext(LookupMetaContext);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [intent, setIntent]           = useState<ReturnType<typeof detectLookupIntent>>(null);
+
+  const handleChange = useCallback(async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val    = e.target.value;
+    const cursor = e.target.selectionStart ?? val.length;
+    onChange(val);
+
+    const detected = detectLookupIntent(val.slice(0, cursor));
+    setIntent(detected);
+    if (!detected) { setSuggestions([]); return; }
+
+    if (detected.type === 'name') {
+      setSuggestions(Object.keys(lookupsMeta).filter(n => n.toLowerCase().startsWith(detected.typed.toLowerCase())));
+    } else {
+      const lookupName = detected.lookupName!;
+      let cols = lookupsMeta[lookupName] ?? [];
+      // If columns aren't in the cached meta yet, fetch them on-demand from the BE
+      if (cols.length === 0) {
+        cols = await fetchColumns(lookupName);
+      }
+      setSuggestions(cols.filter(c => c.toLowerCase().startsWith(detected.typed.toLowerCase())));
+    }
+  }, [onChange, lookupsMeta, fetchColumns]);
+
+  const applySuggestion = useCallback((suggestion: string) => {
+    if (!intent) return;
+    const el     = textareaRef.current;
+    const cursor = el?.selectionStart ?? value.length;
+    const newVal = value.slice(0, cursor - intent.typed.length) + suggestion + value.slice(cursor);
+    onChange(newVal);
+    setSuggestions([]);
+    setIntent(null);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = cursor - intent.typed.length + suggestion.length;
+      el?.setSelectionRange(pos, pos);
+    });
+  }, [value, onChange, intent, textareaRef]);
+
+  const suggestionBox = suggestions.length > 0 && (
+    <div style={{
+      ...(inlineSuggestions
+        ? { marginTop: 6, borderRadius: 6 }
+        : { position: 'absolute', top: '100%', marginTop: 2, zIndex: 1000, borderRadius: 6 }),
+      background: '#1e293b', border: '1px solid #334155',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.25)', minWidth: 200, maxWidth: '100%',
+      maxHeight: 160, overflowY: 'auto',
+    }}>
+      <div style={{ fontSize: 9, color: '#64748b', padding: '4px 10px 2px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+        {intent?.type === 'column' ? `Column — ${intent.lookupName}` : 'Lookup name'}
+      </div>
+      {suggestions.map(s => (
+        <div key={s}
+          onMouseDown={e => { e.preventDefault(); applySuggestion(s); }}
+          style={{ padding: '5px 10px', fontSize: 11, cursor: 'pointer', color: '#e2e8f0', fontFamily: "'JetBrains Mono', monospace" }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        >{s}</div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={{ position: inlineSuggestions ? undefined : 'relative' }}>
+      <Input.TextArea
+        ref={node => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          textareaRef.current = (node as any)?.resizableTextArea?.textArea ?? null;
+        }}
+        size="small" value={value} rows={rows}
+        onChange={handleChange}
+        onBlur={e => { onBlurValidate(e.target.value); setTimeout(() => setSuggestions([]), 150); }}
+        placeholder={placeholder}
+        style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, borderRadius: 6, resize: 'vertical' }}
+      />
+      {suggestionBox}
+    </div>
+  );
+}
+
 function ExpressionInput({
   value, onChange, placeholder = 'expression', rows = 2, label, isTemplate = false,
 }: {
@@ -1193,8 +1321,12 @@ function ExpressionInput({
   label: string;
   isTemplate?: boolean;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  // Separate refs for inline and modal editors so each manages its own DOM node
+  const inlineRef = useRef<HTMLTextAreaElement | null>(null);
+  const modalRef  = useRef<HTMLTextAreaElement | null>(null);
 
   const validate = useCallback(async (expr: string) => {
     if (!expr?.trim()) { setError(null); return; }
@@ -1210,22 +1342,76 @@ function ExpressionInput({
   }, [label, isTemplate]);
 
   return (
-    <div>
-      <Input.TextArea
-        size="small" value={value} rows={rows}
-        onChange={e => { onChange(e.target.value); setError(null); }}
-        onBlur={e => validate(e.target.value)}
-        placeholder={placeholder}
-        status={error ? 'error' : undefined}
-        style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, borderRadius: 6, resize: 'vertical' }}
-      />
-      {checking && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Checking…</div>}
-      {error && !checking && (
-        <div style={{ fontSize: 10, color: '#ef4444', marginTop: 3, lineHeight: 1.4, display: 'flex', gap: 4 }}>
-          <span>⚠</span><span>{error}</span>
+    <>
+      {/* ── Inline editor ─────────────────────────────────────────────── */}
+      <div style={{ position: 'relative' }}>
+        <ExpressionEditorCore
+          value={value} onChange={onChange} placeholder={placeholder}
+          rows={rows} textareaRef={inlineRef} onBlurValidate={validate}
+        />
+        {/* Expand button */}
+        <Tooltip title="Expand editor">
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); setExpanded(true); }}
+            style={{
+              position: 'absolute', top: 5, right: 5,
+              background: 'transparent', border: 'none',
+              color: '#c8d0da', cursor: 'pointer',
+              padding: 2, lineHeight: 1,
+              display: 'flex', alignItems: 'center',
+              opacity: 0.6,
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+          >
+            <ExpandOutlined style={{ fontSize: 11 }} />
+          </button>
+        </Tooltip>
+        {checking && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Checking…</div>}
+        {error && !checking && (
+          <div style={{ fontSize: 10, color: '#ef4444', marginTop: 3, lineHeight: 1.4, display: 'flex', gap: 4 }}>
+            <span>⚠</span><span>{error}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Expand modal ──────────────────────────────────────────────── */}
+      <Modal
+        open={expanded}
+        onCancel={() => setExpanded(false)}
+        footer={null}
+        width={760}
+        title={
+          <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#e2e8f0' }}>
+            {label}
+          </span>
+        }
+        styles={{
+          header: { background: '#0f172a', borderBottom: '1px solid #1e293b', paddingBottom: 12 },
+          content: { background: '#0f172a', padding: 0 },
+          body: { padding: '16px 20px 20px' },
+          mask: { backdropFilter: 'blur(2px)' },
+        }}
+      >
+        <ExpressionEditorCore
+          value={value} onChange={onChange} placeholder={placeholder}
+          rows={16} textareaRef={modalRef} onBlurValidate={validate} inlineSuggestions
+        />
+        {checking && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>Checking…</div>}
+        {error && !checking && (
+          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 8, lineHeight: 1.5, display: 'flex', gap: 6 }}>
+            <span>⚠</span><span>{error}</span>
+          </div>
+        )}
+        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" size="small" onClick={() => { validate(value); setExpanded(false); }}>
+            Done
+          </Button>
         </div>
-      )}
-    </div>
+      </Modal>
+    </>
   );
 }
 
@@ -2185,6 +2371,55 @@ function PolicyEditorContent() {
   const [validationErrors, setValidationErrors] = useState<ExpressionValidationError[]>([]);
   const [validationPanelOpen, setValidationPanelOpen] = useState(false);
 
+  // ── Lookup metadata for LOOKUP() autocomplete ────────────────────────────────
+  // Only show lookups that are actually declared in SOURCE nodes of this policy.
+  // Columns are shown when available (populated at upload time); name suggestions
+  // always work even if column metadata is absent.
+  const [allLookups, setAllLookups] = useState<LookupSummary[]>([]);
+  useEffect(() => {
+    fetchAllLookups().then(setAllLookups).catch(() => {});
+  }, []);
+  const lookupsMeta = useMemo<Record<string, string[]>>(() => {
+    // Collect lookup IDs from all SOURCE nodes in the current graph.
+    // Sources can be stored as plain strings OR as SourceItem objects — handle both.
+    const sourcedIds = new Set<string>();
+    nodes.forEach(node => {
+      const sources = (node.data?.config as Record<string, unknown> | undefined)?.sources;
+      if (!Array.isArray(sources)) return;
+      (sources as (SourceItem | string)[]).forEach(s => {
+        if (typeof s === 'string') {
+          if (s) sourcedIds.add(s);                    // plain lookupId string
+        } else if (s.type === 'lookup' && s.id) {
+          sourcedIds.add(s.id);                        // SourceItem object
+        }
+      });
+    });
+
+    // Build meta: all sourced lookupIds as keys; columns if available, empty array if not
+    const byId = Object.fromEntries(allLookups.map(l => [l.lookupId, l.columns ?? []]));
+    return Object.fromEntries(
+      Array.from(sourcedIds).map(id => [id, byId[id] ?? []])
+    );
+  }, [allLookups, nodes]);
+
+  // In-memory cache so repeated column fetches don't hit the network again
+  const columnsCacheRef = useRef<Record<string, string[]>>({});
+
+  const fetchColumnsForLookup = useCallback(async (lookupId: string): Promise<string[]> => {
+    if (columnsCacheRef.current[lookupId]) return columnsCacheRef.current[lookupId];
+    try {
+      const cols = await fetchLookupColumns(lookupId);
+      columnsCacheRef.current[lookupId] = cols;
+      // Also patch allLookups so lookupsMeta picks up the columns on next render
+      setAllLookups(prev => prev.map(l =>
+        l.lookupId === lookupId ? { ...l, columns: cols } : l
+      ));
+      return cols;
+    } catch {
+      return [];
+    }
+  }, []);
+
   const [refOpen, setRefOpen] = useState(false);
   const [refSection, setRefSection] = useState<string | undefined>(undefined);
 
@@ -2288,6 +2523,18 @@ function PolicyEditorContent() {
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), []);
 
   const onConnect = useCallback((connection: Connection) => {
+    // Each output handle must connect to exactly one target.
+    // Block the connection if this source handle already has an outgoing edge.
+    const alreadyConnected = edgesRef.current.some(
+      e => e.source === connection.source && e.sourceHandle === connection.sourceHandle,
+    );
+    if (alreadyConnected) {
+      message.warning({
+        content: 'This output is already connected. Remove the existing connection first.',
+        key: 'duplicate-edge',
+      });
+      return;
+    }
     const newEdges = addEdge({
       ...connection, id: `e_${uid()}`,
       type: 'default',
@@ -2311,6 +2558,22 @@ function PolicyEditorContent() {
 
   const handleQuickAdd = useCallback((type: string, extra?: Record<string, unknown>) => {
     if (!quickAdd || !connectingHandle.current) return;
+
+    // Block if this handle already has an outgoing edge
+    const alreadyConnected = edgesRef.current.some(
+      e => e.source === connectingHandle.current!.nodeId &&
+           e.sourceHandle === connectingHandle.current!.handleId,
+    );
+    if (alreadyConnected) {
+      message.warning({
+        content: 'This output is already connected. Remove the existing connection first.',
+        key: 'duplicate-edge',
+      });
+      setQuickAdd(null);
+      connectingHandle.current = null;
+      return;
+    }
+
     const newNode = makeNode(type, quickAdd.flowPos, extra);
     const newEdge: Edge = {
       id: `e_${uid()}`,
@@ -2506,6 +2769,7 @@ function PolicyEditorContent() {
   const pageTitle = meta.name || meta.policyId || 'New Policy';
 
   return (
+    <LookupMetaContext.Provider value={{ meta: lookupsMeta, fetchColumns: fetchColumnsForLookup }}>
     <EditPanelContext.Provider value={{ openEdit }}>
     <ModelEditorContext.Provider value={{ openModelEditor: onOpenModelEditor }}>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
@@ -2961,6 +3225,7 @@ function PolicyEditorContent() {
     </div>
     </ModelEditorContext.Provider>
     </EditPanelContext.Provider>
+    </LookupMetaContext.Provider>
   );
 }
 

@@ -54,12 +54,16 @@ export interface LookupSummary {
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  /** CSV column headers — present only for FILE lookups. */
+  columns?: string[];
 }
 
 export interface LookupUploadResponse {
   fileRef: string;
   originalFileName: string;
   fileSizeBytes: number;
+  /** CSV column headers extracted at upload time. */
+  columns?: string[];
 }
 
 export interface SaveLookupRequest {
@@ -72,6 +76,7 @@ export interface SaveLookupRequest {
     type: 'FILE';
     fileRef: string;
     format: 'CSV';
+    columns?: string[];
   };
 }
 export type EvaluationStatus = 'SUCCESS' | 'ERROR';

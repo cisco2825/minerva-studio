@@ -146,7 +146,7 @@ function LookupDetailDrawer({
   // (latest-by-date) only if no active version has been loaded yet.
   const activeVersion = versions.find(v => v.status === 'ACTIVE') ?? lookup;
 
-  const usageExample = `field IN @${lookup.lookupId}`;
+  const usageExample = `field IN LOOKUP("${lookup.lookupId}", "column_name")`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(usageExample).then(() => {
@@ -192,7 +192,7 @@ function LookupDetailDrawer({
         version: newVersion.trim(),
         name: lookup.name,
         description: lookup.description,
-        lookup: { type: 'FILE', fileRef: upload.fileRef, format: 'CSV' },
+        lookup: { type: 'FILE', fileRef: upload.fileRef, format: 'CSV', columns: upload.columns },
       });
       setNvPct(100);
       message.success(`Version ${newVersion.trim()} uploaded`);
@@ -402,7 +402,12 @@ function LookupDetailDrawer({
                       }}>
                         <span style={{ color: '#94a3b8' }}>field </span>
                         <span style={{ color: '#a5b4fc' }}>IN </span>
-                        <span style={{ color: '#34d399' }}>@{lookup.lookupId}</span>
+                        <span style={{ color: '#fbbf24' }}>LOOKUP</span>
+                        <span style={{ color: '#e2e8f0' }}>(</span>
+                        <span style={{ color: '#34d399' }}>"{lookup.lookupId}"</span>
+                        <span style={{ color: '#e2e8f0' }}>, </span>
+                        <span style={{ color: '#94a3b8' }}>"column_name"</span>
+                        <span style={{ color: '#e2e8f0' }}>)</span>
                       </div>
                     </div>
 
@@ -417,9 +422,18 @@ function LookupDetailDrawer({
                       }}>
                         <span style={{ color: '#94a3b8' }}>field </span>
                         <span style={{ color: '#a5b4fc' }}>NOT IN </span>
-                        <span style={{ color: '#34d399' }}>@{lookup.lookupId}</span>
+                        <span style={{ color: '#fbbf24' }}>LOOKUP</span>
+                        <span style={{ color: '#e2e8f0' }}>(</span>
+                        <span style={{ color: '#34d399' }}>"{lookup.lookupId}"</span>
+                        <span style={{ color: '#e2e8f0' }}>, </span>
+                        <span style={{ color: '#94a3b8' }}>"column_name"</span>
+                        <span style={{ color: '#e2e8f0' }}>)</span>
                       </div>
                     </div>
+
+                    <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                      Replace <span style={{ fontFamily: 'monospace', color: '#94a3b8' }}>"column_name"</span> with the actual column header from your CSV.
+                    </Text>
                   </div>
                 </div>
 
@@ -624,7 +638,7 @@ function AddLookupDrawer({ open, onClose, onCreated }: AddDrawerProps) {
         version,
         name: name.trim(),
         description: description.trim() || undefined,
-        lookup: { type: 'FILE', fileRef: upload.fileRef, format: 'CSV' },
+        lookup: { type: 'FILE', fileRef: upload.fileRef, format: 'CSV', columns: upload.columns },
       });
       setUploadPct(100);
 
