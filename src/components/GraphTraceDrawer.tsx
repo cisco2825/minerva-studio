@@ -140,7 +140,7 @@ function inlineOutputHandle(color: string): CSSProperties {
 function traceOverrides(
   traceState: TraceState,
   isCurrent: boolean,
-  baseBorder: string,
+  _baseBorder?: string,
 ): CSSProperties {
   if (!traceState)            return {};
   if (traceState === 'dimmed') return { opacity: 0.22 };
