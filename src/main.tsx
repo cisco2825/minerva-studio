@@ -1,11 +1,9 @@
-import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import 'reactflow/dist/style.css';
 import App from './App';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
     <ConfigProvider
       theme={{
         token: {
@@ -16,7 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           colorInfo: '#6366f1',
           borderRadius: 8,
           fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif',
+            '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           colorBgContainer: '#ffffff',
           colorBgLayout: '#f1f5f9',
           colorBorder: '#e2e8f0',
@@ -49,6 +47,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       }}
     >
       <App />
-    </ConfigProvider>
-  </React.StrictMode>,
+    </ConfigProvider>,
 );

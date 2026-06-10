@@ -1,0 +1,69 @@
+{
+  "description": "Master Business Loan Aggregator — calls all three bank sub-policies in sequence, then uses a CUSTOM_OUTPUT node to assemble a structured response: per-bank status, approved limits, interest rates, eligible bank count, and a recommended bank (lowest rate among approved offers).",
+  "createdBy": "system",
+  "policy": {
+    "id": "business_loan_master",
+    "version": "1.0.0",
+    "name": "Business Loan — Master Aggregator",
+    "type": "RULE_CHAIN",
+    "nodes": [
+      {
+        "id": "start_1",
+        "type": "START",
+        "name": "Start",
+        "position": { "x": 50, "y": 300 }
+      },
+      {
+        "id": "wf_au_bank",
+        "type": "WORKFLOW",
+        "name": "AU Small Finance Bank",
+        "position": { "x": 280, "y": 300 },
+        "config": {
+          "policyId": "au_bank_business_loan",
+          "version": "1.0.0",
+          "resultKey": "au_bank"
+        }
+      },
+      {
+        "id": "wf_hdfc_bank",
+        "type": "WORKFLOW",
+        "name": "HDFC Bank",
+        "position": { "x": 560, "y": 300 },
+        "config": {
+          "policyId": "hdfc_bank_business_loan",
+          "version": "1.0.0",
+          "resultKey": "hdfc_bank"
+        }
+      },
+      {
+        "id": "wf_sbi_bank",
+        "type": "WORKFLOW",
+        "name": "SBI Bank",
+        "position": { "x": 840, "y": 300 },
+        "config": {
+          "policyId": "sbi_bank_business_loan",
+          "version": "1.0.0",
+          "resultKey": "sbi_bank"
+        }
+      },
+      {
+        "id": "custom_output_1",
+        "type": "CUSTOM_OUTPUT",
+        "name": "Final Decision",
+        "position": { "x": 1120, "y": 300 },
+        "config": {
+          "template": "{\n  \"overall_status\": IFELSE(au_bank.outcome == 'approved' OR hdfc_bank.outcome == 'approved' OR sbi_bank.outcome == 'approved', 'eligible', 'not_eligible'),\n  \"eligible_bank_count\": IFELSE(au_bank.outcome == 'approved', 1, 0) + IFELSE(hdfc_bank.outcome == 'approved', 1, 0) + IFELSE(sbi_bank.outcome == 'approved', 1, 0),\n  \"recommended_bank\": IFELSE(hdfc_bank.outcome == 'approved', 'HDFC Bank', IFELSE(sbi_bank.outcome == 'approved', 'SBI Bank', IFELSE(au_bank.outcome == 'approved', 'AU Small Finance Bank', null))),\n  \"offers\": [\n    {\n      \"bank\": \"AU Small Finance Bank\",\n      \"status\": au_bank.outcome,\n      \"approved_limit\": IFELSE(au_bank.outcome == 'approved', au_bank.approved_limit, null),\n      \"interest_rate\": IFELSE(au_bank.outcome == 'approved', au_bank.interest_rate, null),\n      \"product\": \"Business Loan\"\n    },\n    {\n      \"bank\": \"HDFC Bank\",\n      \"status\": hdfc_bank.outcome,\n      \"approved_limit\": IFELSE(hdfc_bank.outcome == 'approved', hdfc_bank.approved_limit, null),\n      \"interest_rate\": IFELSE(hdfc_bank.outcome == 'approved', hdfc_bank.interest_rate, null),\n      \"product\": \"Business Loan\"\n    },\n    {\n      \"bank\": \"SBI Bank\",\n      \"status\": sbi_bank.outcome,\n      \"approved_limit\": IFELSE(sbi_bank.outcome == 'approved', sbi_bank.approved_limit, null),\n      \"interest_rate\": IFELSE(sbi_bank.outcome == 'approved', sbi_bank.interest_rate, null),\n      \"product\": \"Business Loan\"\n    }\n  ]\n}"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "start_1",    "sourceHandle": "next",     "target": "wf_au_bank" },
+      { "id": "e2", "source": "wf_au_bank",  "sourceHandle": "approved", "target": "wf_hdfc_bank" },
+      { "id": "e3", "source": "wf_au_bank",  "sourceHandle": "rejected", "target": "wf_hdfc_bank" },
+      { "id": "e4", "source": "wf_hdfc_bank","sourceHandle": "approved", "target": "wf_sbi_bank" },
+      { "id": "e5", "source": "wf_hdfc_bank","sourceHandle": "rejected", "target": "wf_sbi_bank" },
+      { "id": "e6", "source": "wf_sbi_bank", "sourceHandle": "approved", "target": "custom_output_1" },
+      { "id": "e7", "source": "wf_sbi_bank", "sourceHandle": "rejected", "target": "custom_output_1" }
+    ]
+  }
+}

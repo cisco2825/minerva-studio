@@ -1,24 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Tag, Typography, Alert, Spin, Button, Input } from 'antd';
+import { Table, Typography, Alert, Spin, Button, Input, Modal } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined,
   CheckCircleFilled, ClockCircleFilled, PauseCircleFilled, StopFilled,
-  BranchesOutlined, TableOutlined, BarChartOutlined,
+  ThunderboltFilled, ExclamationCircleFilled,
+  DeleteOutlined, BranchesOutlined, UploadOutlined, InboxOutlined,
 } from '@ant-design/icons';
+import { Popconfirm, message } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
-import { fetchPoliciesPage, fetchPolicyStats } from '../api/client';
-import type { PolicySummary, PolicyType, PolicyStatus, PolicyStats } from '../types';
+import { fetchPoliciesPage, fetchPolicyStats, deletePolicy, createPolicy } from '../api/client';
+import { UserBadge } from '../components/UserBadge';
+import type { PolicySummary, PolicyStatus, PolicyStats, SavePolicyRequest } from '../types';
 
 const { Title, Text } = Typography;
-
-// ── Visual maps ───────────────────────────────────────────────────────────────
-
-const TYPE_META: Record<PolicyType, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  RULE_CHAIN:     { label: 'Rule Chain',     color: '#6366f1', bg: '#eef2ff', icon: <BranchesOutlined /> },
-  DECISION_TABLE: { label: 'Decision Table', color: '#7c3aed', bg: '#f5f3ff', icon: <TableOutlined /> },
-  SCORECARD:      { label: 'Scorecard',      color: '#0891b2', bg: '#ecfeff', icon: <BarChartOutlined /> },
-};
 
 const STATUS_META: Record<PolicyStatus, { label: string; color: string; icon: React.ReactNode }> = {
   ACTIVE:   { label: 'Active',   color: '#10b981', icon: <CheckCircleFilled  style={{ color: '#10b981' }} /> },
@@ -31,7 +26,7 @@ const STATUS_META: Record<PolicyStatus, { label: string; color: string; icon: Re
 
 function StatCard({
   label, value, accent, icon, loading,
-}: { label: string; value: number; accent: string; icon: React.ReactNode; loading: boolean }) {
+}: { label: string; value: number | null; accent: string; icon: React.ReactNode; loading: boolean }) {
   return (
     <div style={{
       background: '#fff',
@@ -53,7 +48,7 @@ function StatCard({
       </div>
       <div>
         <div style={{ fontSize: 26, fontWeight: 700, color: '#0f172a', lineHeight: 1.1 }}>
-          {loading ? '—' : value}
+          {loading || value === null ? '—' : value}
         </div>
         <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{label}</div>
       </div>
@@ -75,12 +70,20 @@ export default function PolicyList() {
   const [tableLoading, setTableLoading] = useState(true);
   const [tableError, setTableError]     = useState<string | null>(null);
 
-  // Stats state (loaded independently)
-  const [stats, setStats]         = useState<PolicyStats | null>(null);
+  // Stats — loaded independently; null means endpoint not available yet
+  const [stats, setStats]               = useState<PolicyStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
 
   // Search (client-side filter on the current page — full server-side search can be added later)
   const [search, setSearch]       = useState('');
+
+  // Import modal state
+  const [importOpen, setImportOpen]       = useState(false);
+  const [importData, setImportData]       = useState<SavePolicyRequest | null>(null);
+  const [importFileName, setImportFileName] = useState('');
+  const [importError, setImportError]     = useState<string | null>(null);
+  const [importing, setImporting]         = useState(false);
+  const fileInputRef                      = useRef<HTMLInputElement>(null);
 
   const loadPage = (p: number) => {
     setTableLoading(true);
@@ -89,7 +92,7 @@ export default function PolicyList() {
       .then(data => {
         setRows(data.content);
         setTotal(data.totalElements);
-        setPage(data.number);
+        setPage(data.number ?? p);   // guard: old API may not return .number
       })
       .catch((e: Error) => setTableError(e.message))
       .finally(() => setTableLoading(false));
@@ -99,13 +102,78 @@ export default function PolicyList() {
 
   useEffect(() => {
     fetchPolicyStats()
-      .then(setStats)
-      .catch(() => {/* stats are non-critical — fail silently */})
+      .then(setStats)          // null when backend not updated yet — cards show '—'
       .finally(() => setStatsLoading(false));
   }, []);
 
   const handleTableChange = (pagination: TablePaginationConfig) => {
     loadPage((pagination.current ?? 1) - 1);
+  };
+
+  const handleDelete = async (policyId: string) => {
+    try {
+      await deletePolicy(policyId);
+      message.success('Policy deleted');
+      loadPage(page);
+      fetchPolicyStats().then(setStats).catch(() => {});
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  // ── Import handlers ───────────────────────────────────────────────────────
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setImportError(null);
+    setImportData(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) {
+      setImportError('Only JSON files are accepted');
+      return;
+    }
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string) as SavePolicyRequest;
+        if (!parsed.policy?.id || !parsed.policy?.version) {
+          setImportError('Invalid policy JSON — missing policy ID or version');
+          return;
+        }
+        setImportData(parsed);
+      } catch {
+        setImportError('Could not parse JSON file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    if (!importData) return;
+    setImporting(true);
+    try {
+      await createPolicy(importData);
+      message.success(`Policy "${importData.policy.name || importData.policy.id}" imported successfully`);
+      setImportOpen(false);
+      setImportData(null);
+      setImportFileName('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadPage(0);
+      fetchPolicyStats().then(setStats).catch(() => {});
+    } catch (e: unknown) {
+      setImportError(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImportClose = () => {
+    setImportOpen(false);
+    setImportData(null);
+    setImportFileName('');
+    setImportError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Filter visible rows by search (over current page)
@@ -124,11 +192,11 @@ export default function PolicyList() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-            background: TYPE_META[row.type].bg,
+            background: '#eef2ff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: TYPE_META[row.type].color, fontSize: 16,
+            color: '#6366f1', fontSize: 16,
           }}>
-            {TYPE_META[row.type].icon}
+            <BranchesOutlined />
           </div>
           <div>
             <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13 }}>{row.name}</div>
@@ -137,20 +205,6 @@ export default function PolicyList() {
             </div>
           </div>
         </div>
-      ),
-    },
-    {
-      title: 'Type',
-      dataIndex: 'type',
-      key: 'type',
-      render: (t: PolicyType) => (
-        <Tag style={{
-          color: TYPE_META[t].color,
-          background: TYPE_META[t].bg,
-          border: 'none', fontWeight: 500, fontSize: 11,
-        }}>
-          {TYPE_META[t].label}
-        </Tag>
       ),
     },
     {
@@ -203,7 +257,30 @@ export default function PolicyList() {
       title: 'Created By',
       dataIndex: 'createdBy',
       key: 'createdBy',
-      render: (v?: string) => <Text style={{ fontSize: 12, color: '#94a3b8' }}>{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
+    },
+    {
+      key: 'actions',
+      width: 48,
+      render: (_: unknown, row: PolicySummary) => (
+        <div onClick={e => e.stopPropagation()}>
+          <Popconfirm
+            title="Delete policy?"
+            description={`This will permanently delete all versions of "${row.name}".`}
+            onConfirm={() => handleDelete(row.policyId)}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+          >
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+            />
+          </Popconfirm>
+        </div>
+      ),
     },
   ];
 
@@ -220,10 +297,10 @@ export default function PolicyList() {
 
       {/* Stat cards — loaded independently from the backend */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
-        <StatCard label="Total Policies" value={stats?.total    ?? 0} accent="#6366f1" icon={<FileTextOutlined />}   loading={statsLoading} />
-        <StatCard label="Active"         value={stats?.active   ?? 0} accent="#10b981" icon={<CheckCircleFilled />}  loading={statsLoading} />
-        <StatCard label="Draft"          value={stats?.draft    ?? 0} accent="#f59e0b" icon={<ClockCircleFilled />}  loading={statsLoading} />
-        <StatCard label="Archived"       value={stats?.archived ?? 0} accent="#ef4444" icon={<StopFilled />}         loading={statsLoading} />
+        <StatCard label="Total Policies"    value={stats?.total          ?? null} accent="#6366f1" icon={<FileTextOutlined />}          loading={statsLoading} />
+        <StatCard label="Live"              value={stats?.live           ?? null} accent="#10b981" icon={<CheckCircleFilled />}         loading={statsLoading} />
+        <StatCard label="Unpublished"       value={stats?.unpublished    ?? null} accent="#f59e0b" icon={<ExclamationCircleFilled />}   loading={statsLoading} />
+        <StatCard label="Evaluations (7d)"  value={stats?.evaluations7d  ?? null} accent="#8b5cf6" icon={<ThunderboltFilled />}         loading={statsLoading} />
       </div>
 
       {/* Table card */}
@@ -249,6 +326,13 @@ export default function PolicyList() {
             allowClear
           />
           <div style={{ flex: 1 }} />
+          <Button
+            icon={<UploadOutlined />}
+            onClick={() => setImportOpen(true)}
+            style={{ borderRadius: 8, fontWeight: 500 }}
+          >
+            Import
+          </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -301,6 +385,99 @@ export default function PolicyList() {
           />
         </Spin>
       </div>
+
+      {/* ── Import Policy Modal ─────────────────────────────────────────── */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+      />
+      <Modal
+        open={importOpen}
+        onCancel={handleImportClose}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 7, background: '#eef2ff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#4f46e5', fontSize: 14,
+            }}>
+              <UploadOutlined />
+            </div>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>Import Policy</span>
+          </div>
+        }
+        footer={[
+          <Button key="cancel" onClick={handleImportClose}>Cancel</Button>,
+          <Button
+            key="import"
+            type="primary"
+            loading={importing}
+            disabled={!importData}
+            onClick={handleImport}
+            style={{ background: '#4f46e5', borderColor: '#4f46e5' }}
+          >
+            Import
+          </Button>,
+        ]}
+        width={480}
+      >
+        {/* Drop zone */}
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${importData ? '#6366f1' : '#e2e8f0'}`,
+            borderRadius: 10,
+            padding: '28px 20px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            background: importData ? '#f5f3ff' : '#fafafa',
+            transition: 'all 0.2s',
+            marginBottom: importError || importData ? 16 : 0,
+          }}
+        >
+          <InboxOutlined style={{ fontSize: 32, color: importData ? '#6366f1' : '#cbd5e1', marginBottom: 8 }} />
+          <div style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>
+            {importFileName
+              ? <><span style={{ color: '#6366f1' }}>{importFileName}</span></>
+              : <><span style={{ color: '#6366f1', fontWeight: 600 }}>Click to choose</span> a JSON file</>
+            }
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Exported policy JSON files only</div>
+        </div>
+
+        {importError && (
+          <Alert type="error" message={importError} showIcon style={{ borderRadius: 8 }} />
+        )}
+
+        {importData && !importError && (
+          <div style={{
+            background: '#f8fafc', border: '1px solid #e2e8f0',
+            borderRadius: 10, padding: '14px 16px',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              Policy Preview
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 7 }}>
+              <Text style={{ fontSize: 12, color: '#94a3b8' }}>Name</Text>
+              <Text style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                {importData.policy.name || importData.policy.id}
+              </Text>
+              <Text style={{ fontSize: 12, color: '#94a3b8' }}>Policy ID</Text>
+              <Text code style={{ fontSize: 12 }}>{importData.policy.id}</Text>
+              <Text style={{ fontSize: 12, color: '#94a3b8' }}>Version</Text>
+              <Text code style={{ fontSize: 12 }}>{importData.policy.version}</Text>
+              <Text style={{ fontSize: 12, color: '#94a3b8' }}>Type</Text>
+              <Text style={{ fontSize: 12, color: '#475569' }}>{importData.policy.type}</Text>
+              <Text style={{ fontSize: 12, color: '#94a3b8' }}>Nodes</Text>
+              <Text style={{ fontSize: 12, color: '#475569' }}>{importData.policy.nodes?.length ?? 0}</Text>
+            </div>
+          </div>
+        )}
+      </Modal>
+
     </div>
   );
 }

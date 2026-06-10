@@ -1,8 +1,87 @@
+// ── Expression validation types ───────────────────────────────────────────────
+
+export interface ExpressionEntry {
+  label: string;
+  expression?: string;
+  template?: string;
+}
+
+export interface ExpressionValidationError {
+  label: string;
+  message: string;
+  line?: number;
+  column?: number;
+}
+
+export interface ValidateExpressionsResponse {
+  valid: boolean;
+  errors: ExpressionValidationError[];
+}
+
+// ── Auth types ────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  id: string;
+  email: string;
+  name: string;
+}
+
+// ── Policy types ──────────────────────────────────────────────────────────────
+
 export type PolicyType = 'RULE_CHAIN' | 'DECISION_TABLE' | 'SCORECARD';
 export type PolicyStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+
+// ── Lookup types ──────────────────────────────────────────────────────────────
+
+export type LookupType = 'INLINE' | 'FILE';
+export type LookupStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+
+export interface LookupSummary {
+  id: string;
+  lookupId: string;
+  version: string;
+  name: string;
+  description?: string;
+  type: LookupType;
+  status: LookupStatus;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  /** CSV column headers — present only for FILE lookups. */
+  columns?: string[];
+}
+
+export interface LookupUploadResponse {
+  fileRef: string;
+  originalFileName: string;
+  fileSizeBytes: number;
+  /** CSV column headers extracted at upload time. */
+  columns?: string[];
+}
+
+export interface SaveLookupRequest {
+  lookupId: string;
+  version: string;
+  name: string;
+  description?: string;
+  createdBy?: string;
+  lookup: {
+    type: 'FILE';
+    fileRef: string;
+    format: 'CSV';
+    columns?: string[];
+  };
+}
 export type EvaluationStatus = 'SUCCESS' | 'ERROR';
 export type TraceLevel = 'MINIMAL' | 'STANDARD' | 'FULL';
-export type NodeType = 'START' | 'RULE' | 'BRANCH' | 'SOURCE' | 'WORKFLOW' | 'MODEL' | 'OUTCOME';
+export type NodeType = 'START' | 'RULE' | 'BRANCH' | 'SOURCE' | 'WORKFLOW' | 'MODEL' | 'OUTCOME' | 'CUSTOM_OUTPUT';
 export type OnMissing = 'FAIL' | 'PASS' | 'SKIP';
 export type DataType = 'NUMBER' | 'TEXT' | 'DATE' | 'BOOLEAN';
 export type HitPolicy = 'FIRST' | 'UNIQUE';
@@ -34,7 +113,6 @@ export interface GraphRule {
   expression: string;
   cantDecideExpression?: string;
   priority: number;
-  onMissing?: OnMissing;
 }
 
 export interface RuleNodeConfig {
@@ -157,6 +235,11 @@ export interface ModelNodeConfig {
 export interface OutcomeNodeConfig {
   outcome: string;
   outputFields?: Record<string, unknown>;
+  outputExpressions?: Record<string, string>;
+}
+
+export interface CustomOutputNodeConfig {
+  template: string;
 }
 
 // ── Policy storage ────────────────────────────────────────────────────────────
@@ -177,10 +260,9 @@ export interface PolicySummary {
 
 export interface PolicyStats {
   total: number;
-  active: number;
-  draft: number;
-  inactive: number;
-  archived: number;
+  live: number;
+  unpublished: number;
+  evaluations7d: number;
 }
 
 export interface Policy {
@@ -239,6 +321,21 @@ export interface RuleResult {
   result: boolean;
   action: string;
   outcome?: string;
+  /** Expression string — only present when traceLevel is FULL */
+  expression?: string;
+  /** Resolved field values used during evaluation — only present when traceLevel is FULL */
+  resolvedValues?: Record<string, unknown>;
+}
+
+export interface GraphTraceStep {
+  nodeId: string;
+  nodeName: string;
+  nodeType: NodeType;
+  /** Output handle taken to reach the next node; null for the terminal OUTCOME node */
+  handleTaken: string | null;
+  durationMs: number;
+  /** Per-rule / per-condition results within this node */
+  details: RuleResult[];
 }
 
 export interface ScorecardBreakdownEntry {
@@ -257,6 +354,7 @@ export interface EvaluationResult {
   skippedRules?: string[];
   notEvaluated?: string[];
   outputFields?: Record<string, unknown>;
+  customOutput?: unknown;
   // scorecard fields
   totalScore?: number;
   maxPossibleScore?: number;
@@ -266,4 +364,9 @@ export interface EvaluationResult {
   tableOutput?: unknown;
   outputColumn?: string;
   evaluationMs: number;
+  /**
+   * Step-by-step execution trace for graph-based RULE_CHAIN policies.
+   * Absent for non-graph policies and when traceLevel is MINIMAL.
+   */
+  graphTrace?: GraphTraceStep[];
 }

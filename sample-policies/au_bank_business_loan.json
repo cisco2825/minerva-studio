@@ -1,0 +1,194 @@
+{
+  "description": "AU Small Finance Bank — Business Loan eligibility policy. Hard filters gate entry; a 4-variable scorecard determines the credit tier (PRIME / STANDARD / SUBPRIME). PRIME and STANDARD are approved with the applicable interest rate.",
+  "createdBy": "system",
+  "policy": {
+    "id": "au_bank_business_loan",
+    "version": "1.0.0",
+    "name": "AU Small Finance Bank — Business Loan",
+    "type": "RULE_CHAIN",
+    "nodes": [
+      {
+        "id": "start_1",
+        "type": "START",
+        "name": "Start",
+        "position": { "x": 50, "y": 300 }
+      },
+      {
+        "id": "rule_hard_filters",
+        "type": "RULE",
+        "name": "Hard Filter Rules",
+        "position": { "x": 280, "y": 300 },
+        "config": {
+          "rules": [
+            {
+              "name": "min_business_vintage",
+              "expression": "business.vintage_years >= 2",
+              "priority": 1
+            },
+            {
+              "name": "min_annual_turnover",
+              "expression": "business.annual_turnover >= 1000000",
+              "priority": 2
+            },
+            {
+              "name": "min_cibil_score",
+              "expression": "applicant.credit_score >= 650",
+              "priority": 3
+            },
+            {
+              "name": "no_active_defaults",
+              "expression": "applicant.existing_dpd == 0",
+              "priority": 4
+            },
+            {
+              "name": "positive_cash_flow",
+              "expression": "financials.cash_flow_positive == true",
+              "priority": 5
+            },
+            {
+              "name": "loan_to_turnover_ratio",
+              "expression": "loan_request.amount <= business.annual_turnover * 2",
+              "cantDecideExpression": "loan_request.amount IS NULL OR business.annual_turnover IS NULL",
+              "priority": 6
+            }
+          ]
+        }
+      },
+      {
+        "id": "model_scorecard",
+        "type": "MODEL",
+        "name": "Credit Scorecard",
+        "position": { "x": 560, "y": 300 },
+        "config": {
+          "models": [
+            {
+              "name": "credit_score_band",
+              "type": "SCORECARD",
+              "resultKey": "credit_score_band",
+              "priority": 1,
+              "inlineDefinition": {
+                "name": "au_credit_scorecard",
+                "variables": [
+                  {
+                    "name": "cibil_score",
+                    "param": "applicant.credit_score",
+                    "bands": [
+                      { "operator": "gte", "value": 750, "points": 30, "label": "Excellent (750+)" },
+                      { "operator": "gte", "value": 700, "points": 22, "label": "Good (700–749)" },
+                      { "operator": "gte", "value": 650, "points": 12, "label": "Average (650–699)" }
+                    ],
+                    "defaultPoints": 0
+                  },
+                  {
+                    "name": "annual_turnover",
+                    "param": "business.annual_turnover",
+                    "bands": [
+                      { "operator": "gte", "value": 10000000, "points": 25, "label": "≥ ₹1 Cr" },
+                      { "operator": "gte", "value": 5000000,  "points": 18, "label": "₹50L – ₹1Cr" },
+                      { "operator": "gte", "value": 2000000,  "points": 12, "label": "₹20L – ₹50L" },
+                      { "operator": "gte", "value": 1000000,  "points": 8,  "label": "₹10L – ₹20L" }
+                    ],
+                    "defaultPoints": 0
+                  },
+                  {
+                    "name": "business_vintage",
+                    "param": "business.vintage_years",
+                    "bands": [
+                      { "operator": "gte", "value": 7, "points": 25, "label": "7+ years" },
+                      { "operator": "gte", "value": 5, "points": 20, "label": "5–6 years" },
+                      { "operator": "gte", "value": 3, "points": 15, "label": "3–4 years" },
+                      { "operator": "gte", "value": 2, "points": 10, "label": "2 years" }
+                    ],
+                    "defaultPoints": 0
+                  },
+                  {
+                    "name": "debt_to_equity",
+                    "param": "financials.debt_to_equity",
+                    "bands": [
+                      { "operator": "lte", "value": 0.5, "points": 20, "label": "Very Low (≤0.5)" },
+                      { "operator": "lte", "value": 1.0, "points": 15, "label": "Low (≤1.0)" },
+                      { "operator": "lte", "value": 1.5, "points": 10, "label": "Moderate (≤1.5)" },
+                      { "operator": "lte", "value": 2.5, "points": 5,  "label": "High (≤2.5)" }
+                    ],
+                    "defaultPoints": 0
+                  }
+                ],
+                "thresholds": [
+                  { "min": 70, "max": 100, "outcome": "PRIME",    "label": "Prime Credit" },
+                  { "min": 50, "max": 69,  "outcome": "STANDARD", "label": "Standard Credit" },
+                  { "min": 0,  "max": 49,  "outcome": "SUBPRIME", "label": "Subprime" }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "branch_tier_decision",
+        "type": "BRANCH",
+        "name": "Tier Decision",
+        "position": { "x": 840, "y": 300 },
+        "config": {
+          "conditions": [
+            {
+              "id": "eligible",
+              "label": "PRIME or STANDARD",
+              "expression": "credit_score_band == 'PRIME' OR credit_score_band == 'STANDARD'"
+            }
+          ]
+        }
+      },
+      {
+        "id": "outcome_approved",
+        "type": "OUTCOME",
+        "name": "Approved",
+        "position": { "x": 1100, "y": 180 },
+        "config": {
+          "outcome": "approved",
+          "outputFields": {
+            "bank": "AU Small Finance Bank",
+            "product": "Business Loan"
+          },
+          "outputExpressions": {
+            "approved_limit": "loan_request.amount",
+            "interest_rate": "IFELSE(credit_score_band == 'PRIME', 13.5, 15.5)"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_score",
+        "type": "OUTCOME",
+        "name": "Rejected — Subprime Score",
+        "position": { "x": 1100, "y": 420 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "AU Small Finance Bank",
+            "reason": "Credit score below required threshold"
+          }
+        }
+      },
+      {
+        "id": "outcome_rejected_hard",
+        "type": "OUTCOME",
+        "name": "Rejected — Hard Filter",
+        "position": { "x": 560, "y": 480 },
+        "config": {
+          "outcome": "rejected",
+          "outputFields": {
+            "bank": "AU Small Finance Bank",
+            "reason": "Basic eligibility criteria not met"
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "start_1",           "sourceHandle": "next",     "target": "rule_hard_filters" },
+      { "id": "e2", "source": "rule_hard_filters",  "sourceHandle": "pass",     "target": "model_scorecard" },
+      { "id": "e3", "source": "rule_hard_filters",  "sourceHandle": "fail",     "target": "outcome_rejected_hard" },
+      { "id": "e4", "source": "model_scorecard",    "sourceHandle": "next",     "target": "branch_tier_decision" },
+      { "id": "e5", "source": "branch_tier_decision","sourceHandle": "eligible", "target": "outcome_approved" },
+      { "id": "e6", "source": "branch_tier_decision","sourceHandle": "default",  "target": "outcome_rejected_score" }
+    ]
+  }
+}

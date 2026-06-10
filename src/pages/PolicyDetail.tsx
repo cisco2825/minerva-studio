@@ -6,13 +6,15 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  EditOutlined, CopyOutlined,
+  EditOutlined, CopyOutlined, DeleteOutlined, ApartmentOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
   fetchVersions, updateStatus, evaluate,
-  fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition,
+  fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition, deletePolicy,
 } from '../api/client';
+import { UserBadge } from '../components/UserBadge';
+import { GraphTraceDrawer } from '../components/GraphTraceDrawer';
 import type {
   PolicySummary, PolicyStatus, EvaluationLogSummary,
   EvaluationLogDetail, EvaluationResult, RuleResult,
@@ -58,14 +60,22 @@ function policyToEditorState(policy: Policy, summary: PolicySummary, mode: 'edit
     position: n.position,
     data: { label: n.name || n.type, config: n.config || {} },
   }));
-  const rfEdges: Edge[] = (policy.edges || []).map(e => ({
-    id: e.id,
-    source: e.source,
-    sourceHandle: e.sourceHandle,
-    target: e.target,
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-  }));
+  const HANDLE_COLOR: Record<string, string> = {
+    pass: '#16a34a', fail: '#ef4444', cantDecide: '#f59e0b',
+    next: '#6366f1', default: '#94a3b8',
+  };
+  const rfEdges: Edge[] = (policy.edges || []).map(e => {
+    const color = HANDLE_COLOR[e.sourceHandle || 'next'] ?? '#94a3b8';
+    return {
+      id: e.id,
+      source: e.source,
+      sourceHandle: e.sourceHandle,
+      target: e.target,
+      type: 'default',
+      markerEnd: { type: MarkerType.ArrowClosed, color },
+      style: { stroke: color, strokeWidth: 2 },
+    };
+  });
   if (rfNodes.length === 0) {
     rfNodes.push({ id: 'start', type: 'START', position: { x: 80, y: 200 }, data: { label: 'START' } });
   }
@@ -141,7 +151,7 @@ function VersionsTab({ policyId }: { policyId: string }) {
     {
       title: 'Created By',
       dataIndex: 'createdBy',
-      render: (v?: string) => <Text type="secondary">{v ?? '—'}</Text>,
+      render: (v?: string) => <UserBadge name={v} />,
     },
     {
       title: 'Created At',
@@ -162,13 +172,15 @@ function VersionsTab({ policyId }: { policyId: string }) {
               Edit
             </Button>
           )}
-          <Button
-            size="small" icon={<CopyOutlined />}
-            loading={editLoading === `${row.version}-newVersion`}
-            onClick={() => openEditor(row, 'newVersion')}
-          >
-            New Version
-          </Button>
+          {row.status !== 'DRAFT' && (
+            <Button
+              size="small" icon={<CopyOutlined />}
+              loading={editLoading === `${row.version}-newVersion`}
+              onClick={() => openEditor(row, 'newVersion')}
+            >
+              New Version
+            </Button>
+          )}
           {NEXT_ACTIONS[row.status].map(({ label, next, danger }) => (
             <Popconfirm
               key={next}
@@ -198,20 +210,62 @@ function VersionsTab({ policyId }: { policyId: string }) {
 // ── Result Display ────────────────────────────────────────────────────────────
 
 function ResultDisplay({ result }: { result: EvaluationResult }) {
-  const outcomeColor = result.outcome === 'APPROVED' || result.outcome === 'PASS'
-    ? 'success' : result.outcome === 'REJECTED' || result.outcome === 'FAIL'
-    ? 'error' : 'processing';
+  const isCustomOutput = result.customOutput !== undefined && result.customOutput !== null;
+
+  const outcomeColor = isCustomOutput
+    ? 'processing'
+    : result.outcome === 'APPROVED' || result.outcome?.toLowerCase() === 'approved' || result.outcome === 'PASS'
+    ? 'success'
+    : result.outcome === 'REJECTED' || result.outcome?.toLowerCase() === 'rejected' || result.outcome === 'FAIL'
+    ? 'error'
+    : 'processing';
+
+  const outcomeLabel = isCustomOutput ? 'Custom Output' : (result.outcome ?? 'No outcome');
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space align="center" size={16}>
         <Badge status={outcomeColor} />
-        <Text strong style={{ fontSize: 20 }}>{result.outcome ?? 'No outcome'}</Text>
+        <Text strong style={{ fontSize: 20 }}>{outcomeLabel}</Text>
         <Text type="secondary">{result.evaluationMs}ms</Text>
       </Space>
 
       {result.triggeredBy && (
         <Text type="secondary">Triggered by: <Text code>{result.triggeredBy}</Text></Text>
+      )}
+
+      {/* ── Custom Output ── */}
+      {isCustomOutput && (
+        <>
+          <Divider orientation="left" plain>Output</Divider>
+          <pre style={{
+            background: '#0f172a', color: '#e2e8f0',
+            borderRadius: 8, padding: '12px 16px',
+            fontSize: 12, lineHeight: 1.6,
+            overflowX: 'auto', margin: 0,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          }}>
+            {JSON.stringify(result.customOutput, null, 2)}
+          </pre>
+        </>
+      )}
+
+      {/* ── Standard output fields ── */}
+      {!isCustomOutput && result.outputFields && Object.keys(result.outputFields).length > 0 && (
+        <>
+          <Divider orientation="left" plain>Output Fields</Divider>
+          <Table
+            dataSource={Object.entries(result.outputFields).map(([k, v]) => ({ key: k, value: v }))}
+            rowKey="key"
+            size="small"
+            pagination={false}
+            columns={[
+              { title: 'Field', dataIndex: 'key',   render: (k: string) => <Text code>{k}</Text> },
+              { title: 'Value', dataIndex: 'value', render: (v: unknown) =>
+                  <Text>{typeof v === 'object' ? JSON.stringify(v) : String(v ?? '—')}</Text> },
+            ]}
+          />
+        </>
       )}
 
       {result.ruleResults && result.ruleResults.length > 0 && (
@@ -231,7 +285,8 @@ function ResultDisplay({ result }: { result: EvaluationResult }) {
                   ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
                   : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
               },
-              { title: 'Action', dataIndex: 'action', render: (a: string) => <Tag>{a}</Tag> },
+              { title: 'Action', dataIndex: 'action', render: (a: string) => a ? <Tag>{a}</Tag> : '—' },
+              { title: 'Outcome', dataIndex: 'outcome', render: (o: string) => o ? <Tag color="blue">{o}</Tag> : '—' },
             ]}
           />
         </>
@@ -281,6 +336,7 @@ function TestConsoleTab({ policyId, versions }: { policyId: string; versions: Po
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [traceDrawerOpen, setTraceDrawerOpen] = useState(false);
 
   const activeVersion = versions.find((v) => v.status === 'ACTIVE');
 
@@ -377,7 +433,31 @@ function TestConsoleTab({ policyId, versions }: { policyId: string; versions: Po
       {result && (
         <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 20 }}>
           <ResultDisplay result={result} />
+          {result.graphTrace && result.graphTrace.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Button
+                icon={<ApartmentOutlined />}
+                onClick={() => setTraceDrawerOpen(true)}
+                style={{ borderColor: '#6366f1', color: '#6366f1' }}
+              >
+                View Execution Flow
+              </Button>
+            </div>
+          )}
         </div>
+      )}
+
+      {result?.graphTrace && result.graphTrace.length > 0 && (
+        <GraphTraceDrawer
+          open={traceDrawerOpen}
+          onClose={() => setTraceDrawerOpen(false)}
+          policyId={policyId}
+          policyVersion={result.policyVersion}
+          graphTrace={result.graphTrace}
+          outcome={result.outcome}
+          evaluationMs={result.evaluationMs}
+          policyName={versions.find((v) => v.version === result.policyVersion)?.name}
+        />
       )}
     </Space>
   );
@@ -538,6 +618,7 @@ export default function PolicyDetail() {
   const navigate = useNavigate();
   const [versions, setVersions] = useState<PolicySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!policyId) return;
@@ -545,6 +626,19 @@ export default function PolicyDetail() {
       .then(setVersions)
       .finally(() => setLoading(false));
   }, [policyId]);
+
+  const handleDelete = async () => {
+    if (!policyId) return;
+    setDeleting(true);
+    try {
+      await deletePolicy(policyId);
+      message.success('Policy deleted');
+      navigate('/');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Delete failed');
+      setDeleting(false);
+    }
+  };
 
   const latest = versions[0];
 
@@ -557,14 +651,34 @@ export default function PolicyDetail() {
         borderBottom: '1px solid #e2e8f0',
         padding: '20px 36px',
       }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
-          style={{ color: '#64748b', padding: '0 0 12px', height: 'auto', fontSize: 13 }}
-        >
-          Back to Policies
-        </Button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/')}
+            style={{ color: '#64748b', padding: '0 0 12px', height: 'auto', fontSize: 13 }}
+          >
+            Back to Policies
+          </Button>
+          <Popconfirm
+            title="Delete this policy?"
+            description="All versions and their data will be permanently removed."
+            onConfirm={handleDelete}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+            placement="bottomRight"
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleting}
+              size="small"
+            >
+              Delete Policy
+            </Button>
+          </Popconfirm>
+        </div>
 
         <Spin spinning={loading}>
           {latest && (
