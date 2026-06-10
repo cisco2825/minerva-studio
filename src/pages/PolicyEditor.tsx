@@ -1696,8 +1696,8 @@ function InlineOutcomeEditor({ config, onChange }: {
           Static key-value pairs returned with the outcome result.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {fieldEntries.map(([key, val]) => (
-            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {fieldEntries.map(([key, val], idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <Input
                 size="small"
                 value={key}
@@ -1733,8 +1733,8 @@ function InlineOutcomeEditor({ config, onChange }: {
           Evaluated at runtime against context. Merged with static output fields; expressions win on key conflicts.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {exprEntries.map(([key, val]) => (
-            <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+          {exprEntries.map(([key, val], idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <Input
                 size="small"
                 value={key}
@@ -2341,9 +2341,11 @@ function PolicyEditorContent() {
   // ── Unsaved-changes guard ─────────────────────────────────────────────────────
 
   // Block in-app navigation (sidebar links, back button, programmatic navigate)
+  // Use refs instead of isDirty state so the check is synchronous — avoids a race where
+  // setIsDirty(false) + navigate() fires the blocker before React flushes the state update.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname,
+      savedPointer.current !== historyPointer.current && currentLocation.pathname !== nextLocation.pathname,
   );
 
   useEffect(() => {
