@@ -1835,7 +1835,11 @@ function RightEditPanel({
       open={!!active}
       onClose={onClose}
       width={380}
-      styles={{ header: { display: 'none' }, body: { padding: 0, background: '#f8fafc' } }}
+      styles={{
+        header:  { display: 'none' },
+        body:    { padding: 0, background: '#f8fafc' },
+        wrapper: { top: 54 },       // clear the 2px gradient strip + 52px top bar
+      }}
       mask={false}
     >
       {/* Panel header */}
@@ -2778,6 +2782,7 @@ function PolicyEditorContent() {
       <div style={{
         height: 2, flexShrink: 0,
         background: 'linear-gradient(90deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%)',
+        position: 'relative', zIndex: 1001,
       }} />
 
       {/* ── Top bar ──────────────────────────────────────────────────── */}
@@ -2785,6 +2790,7 @@ function PolicyEditorContent() {
         height: 52, background: '#0f172a', flexShrink: 0,
         borderBottom: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center', padding: '0 20px', gap: 0,
+        position: 'relative', zIndex: 1001,
       }}>
         {/* Minerva logo mark — click to go home */}
         <div
@@ -3133,8 +3139,9 @@ function PolicyEditorContent() {
           </div>
         }
         styles={{
-          header: { borderBottom: '1px solid #e2e8f0', padding: '14px 16px' },
-          body:   { padding: '16px', overflowY: 'auto' },
+          header:  { borderBottom: '1px solid #e2e8f0', padding: '14px 16px' },
+          body:    { padding: '16px', overflowY: 'auto' },
+          wrapper: { top: 54 },
         }}
         style={{ boxShadow: '-4px 0 24px rgba(0,0,0,0.12)' }}
       >

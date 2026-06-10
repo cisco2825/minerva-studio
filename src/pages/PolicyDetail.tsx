@@ -6,7 +6,7 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  EditOutlined, CopyOutlined, DeleteOutlined,
+  EditOutlined, CopyOutlined, DeleteOutlined, ApartmentOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -14,6 +14,7 @@ import {
   fetchEvaluations, fetchEvaluationDetail, fetchPolicyDefinition, deletePolicy,
 } from '../api/client';
 import { UserBadge } from '../components/UserBadge';
+import { GraphTraceDrawer } from '../components/GraphTraceDrawer';
 import type {
   PolicySummary, PolicyStatus, EvaluationLogSummary,
   EvaluationLogDetail, EvaluationResult, RuleResult,
@@ -335,6 +336,7 @@ function TestConsoleTab({ policyId, versions }: { policyId: string; versions: Po
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [traceDrawerOpen, setTraceDrawerOpen] = useState(false);
 
   const activeVersion = versions.find((v) => v.status === 'ACTIVE');
 
@@ -431,7 +433,31 @@ function TestConsoleTab({ policyId, versions }: { policyId: string; versions: Po
       {result && (
         <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 20 }}>
           <ResultDisplay result={result} />
+          {result.graphTrace && result.graphTrace.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Button
+                icon={<ApartmentOutlined />}
+                onClick={() => setTraceDrawerOpen(true)}
+                style={{ borderColor: '#6366f1', color: '#6366f1' }}
+              >
+                View Execution Flow
+              </Button>
+            </div>
+          )}
         </div>
+      )}
+
+      {result?.graphTrace && result.graphTrace.length > 0 && (
+        <GraphTraceDrawer
+          open={traceDrawerOpen}
+          onClose={() => setTraceDrawerOpen(false)}
+          policyId={policyId}
+          policyVersion={result.policyVersion}
+          graphTrace={result.graphTrace}
+          outcome={result.outcome}
+          evaluationMs={result.evaluationMs}
+          policyName={versions.find((v) => v.version === result.policyVersion)?.name}
+        />
       )}
     </Space>
   );

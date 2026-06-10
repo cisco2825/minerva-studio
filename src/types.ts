@@ -321,6 +321,21 @@ export interface RuleResult {
   result: boolean;
   action: string;
   outcome?: string;
+  /** Expression string — only present when traceLevel is FULL */
+  expression?: string;
+  /** Resolved field values used during evaluation — only present when traceLevel is FULL */
+  resolvedValues?: Record<string, unknown>;
+}
+
+export interface GraphTraceStep {
+  nodeId: string;
+  nodeName: string;
+  nodeType: NodeType;
+  /** Output handle taken to reach the next node; null for the terminal OUTCOME node */
+  handleTaken: string | null;
+  durationMs: number;
+  /** Per-rule / per-condition results within this node */
+  details: RuleResult[];
 }
 
 export interface ScorecardBreakdownEntry {
@@ -349,4 +364,9 @@ export interface EvaluationResult {
   tableOutput?: unknown;
   outputColumn?: string;
   evaluationMs: number;
+  /**
+   * Step-by-step execution trace for graph-based RULE_CHAIN policies.
+   * Absent for non-graph policies and when traceLevel is MINIMAL.
+   */
+  graphTrace?: GraphTraceStep[];
 }
